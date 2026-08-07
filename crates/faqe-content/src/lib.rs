@@ -1271,7 +1271,7 @@ fn parse_page(
         "post" => PageKind::Post,
         "cv" => PageKind::Resume,
         "presentation" => PageKind::Talk,
-        "home" | "about" | "identity" | "key" | "quotes" | "skills" | "list" => PageKind::Front,
+        "home" | "about" | "key" | "quotes" => PageKind::Front,
         other => {
             return Err(ContentError::FrontMatter {
                 path: relative_path.to_owned(),
@@ -2757,7 +2757,7 @@ fn validate_public_url(path: &Path, value: &str, allow_relative: bool) -> Result
 
 fn markdown_to_html(markdown: &str) -> (String, Vec<TocItem>) {
     markdown_to_html_resolving(markdown, |url| Ok::<_, ContentError>(url.to_owned()))
-        .expect("identity URL resolver cannot fail")
+        .expect("default URL resolver cannot fail")
 }
 
 fn markdown_to_html_resolving(
@@ -3076,8 +3076,6 @@ fn sanitize_legacy_html(html: &str) -> String {
         "--faqe-image-border",
         "--faqe-image-radius",
         "--faqe-image-width",
-        "--faqe-progress-color",
-        "--faqe-progress-value",
         "background-color",
         "border",
         "border-radius",
@@ -3351,8 +3349,6 @@ fn classify_element(tag: &str, attributes: &BTreeMap<String, String>) -> Element
     };
     if has_class("btn") {
         ElementKind::Button
-    } else if has_class("progress_main") || has_class("progress_one") || has_class("progress_two") {
-        ElementKind::Progress
     } else if has_class("command") || has_class("commandframeholder") {
         ElementKind::Command
     } else if has_class("textframeholder") || has_class("tipframeholder") {

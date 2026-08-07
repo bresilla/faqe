@@ -185,7 +185,6 @@ pub enum ElementKind {
     Table,
     Image,
     Button,
-    Progress,
     Command,
     Callout,
     Disclosure,

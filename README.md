@@ -29,11 +29,11 @@ generator fingerprints and emits referenced files. With no `site.toml`, safe
 built-in metadata and the `bresilla` theme are used.
 
 Content is organized by top-level surface folders. `home`, `about`, `cv`,
-`posts`, and `talks` are visible tabs in the canonical site; `identity`, `key`,
-`quotes`, `skills`, and `lists` are indirect surfaces reached from other UI.
-Each folder has a typed `_index.md`, while dirstruct items declare their own
-`post` or `presentation` type. The home descriptor owns the website name and
-folder visibility/weight owns navigation; neither is duplicated in `site.toml`.
+`posts`, and `talks` are visible tabs in the canonical site; `key` and `quotes`
+are indirect surfaces reached from other UI. Each folder has a typed
+`_index.md`, while dirstruct items declare their own `post` or `presentation`
+type. The home descriptor owns the website name and folder visibility/weight
+owns navigation; neither is duplicated in `site.toml`.
 
 See [the content directory contract](docs/content-contract.md) for deterministic
 discovery, front matter, sections, routes, symlinks, and media rules.

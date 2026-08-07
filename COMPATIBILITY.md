@@ -6,9 +6,9 @@ the generator.
 
 ## Content and routes
 
-- Canonical Markdown files: **30**, including the typed home descriptor.
-- Canonical content routes: **30**, including `/`.
-- Total public routes after taxonomy expansion: **85**.
+- Canonical Markdown files: **28**, including the typed home descriptor.
+- Canonical content routes: **28**, including `/`.
+- Total public routes after taxonomy expansion: **93**.
 - Old `page/1/` pagination shells and feed XML files are generated support
   artifacts, not independently owned content routes. They are intentionally
   not treated as canonical pages.
@@ -19,29 +19,13 @@ All shortcodes currently present in `content/` are recognized:
 
 | Shortcode | Uses |
 |---|---:|
-| command | 68 |
-| progressbar | 28 |
-| slide | 5 |
-| image | 5 |
-| block | 5 |
-| hr | 4 |
-| tip | 3 |
-| button | 3 |
-| hide | 2 |
-| sideimage | 2 |
-| sidenote | 2 |
-| highlight | 1 |
-| section | 1 |
+| image | 4 |
 
 The parser rejects unknown shortcodes, unsafe URL schemes, escaping content
 assets, route collisions, excessive nesting, invalid slide-attribute names,
 and active raw HTML. Supported shortcode output is built as an explicit typed
 element/attribute/text tree before serialization; authored text and attribute
 values are escaped at that boundary rather than interpolated into HTML strings.
-The known
-script and click handler in `content/identity/_index.md` are removed by the sanitizer and
-their navigation behavior is implemented by the Yew logo component.
-
 `posts/software/chroot/lxd_lxc.md` contains the historical slug `lxd-lxc:`. It
 is the one explicit invalid-slug compatibility override and continues to own
 the published `/post/software/chroot/lxd-lxc/` route. Invalid slugs elsewhere

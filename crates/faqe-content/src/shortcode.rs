@@ -407,45 +407,6 @@ fn render_node(
                 )
                 .into()
         }
-        "progressbar" => {
-            let value = args
-                .positional
-                .first()
-                .and_then(|value| value.parse::<u8>().ok())
-                .unwrap_or(0)
-                .min(100);
-            let color = match args.positional.get(1) {
-                Some(value) if is_hex_color(value) => format!("#{value}"),
-                Some(value) => {
-                    return Err(ShortcodeError {
-                        offset: 0,
-                        message: format!("progressbar color {value:?} must contain 3, 4, 6, or 8 hexadecimal digits"),
-                    });
-                }
-                None => "var(--accent-color)".into(),
-            };
-            Element::new("div")
-                .attr("class", "progress_main")
-                .children([
-                    Element::new("div")
-                        .attr("class", "progress_one")
-                        .child(Markup::raw(inner))
-                        .into(),
-                    Element::new("div")
-                        .attr("class", "progress_two")
-                        .attr("role", "progressbar")
-                        .attr("aria-label", "Progress")
-                        .attr("aria-valuemin", "0")
-                        .attr("aria-valuemax", "100")
-                        .attr("aria-valuenow", value.to_string())
-                        .child(Element::new("div").attr(
-                            "style",
-                            format!("--faqe-progress-value:{value}%;--faqe-progress-color:{color}"),
-                        ))
-                        .into(),
-                ])
-                .into()
-        }
         "command" => Element::new("div")
             .attr("class", "commandframeholder")
             .child(
@@ -709,10 +670,6 @@ fn numeric(value: Option<&str>, default: u16, minimum: u16, maximum: u16) -> u16
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(default)
         .clamp(minimum, maximum)
-}
-
-fn is_hex_color(value: &str) -> bool {
-    matches!(value.len(), 3 | 4 | 6 | 8) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn is_attribute_name(value: &str) -> bool {

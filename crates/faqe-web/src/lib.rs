@@ -797,9 +797,9 @@ fn home_page(props: &BundleProps) -> Html {
         .map(|role| title_case(role.trim()))
         .filter(|role| !role.is_empty())
         .collect::<Vec<_>>();
-    let identity_route = props
+    let key_route = props
         .bundle
-        .page_of_type("identity")
+        .page_of_type("key")
         .map(|page| page.route.clone())
         .unwrap_or_else(|| "/".into());
 
@@ -807,8 +807,8 @@ fn home_page(props: &BundleProps) -> Html {
         <section class="container centered estate">
             <h1 class="faqe-visually-hidden">{&props.bundle.site.title}</h1>
             <section class="homesection"><section class="me"><div class="about" id="nodec">
-                <div class="home-identity">
-                    <div class="avatar"><a class="logo glitch-logo" href={site_url(&identity_route)} aria-label="Open identity page" {onfocus} {onblur}>
+                <div class="home-brand">
+                    <div class="avatar"><a class="logo glitch-logo" href={site_url(&key_route)} aria-label="Open public key" {onfocus} {onblur}>
                         {if avatar.is_empty() {
                             html! { <span class="avatar-fallback" {onmouseenter} {onmouseleave}>{props.bundle.site.author.chars().next().unwrap_or('?')}</span> }
                         } else {
@@ -823,7 +823,7 @@ fn home_page(props: &BundleProps) -> Html {
                         }}
                     </a></div>
                     <div class="brand">
-                        <div class="author"><a href={site_url(&identity_route)} class="nametext glitch"><ScrambleTitle text={props.bundle.site.author.clone()} profile={GlitchProfile::Brand} /></a></div>
+                        <div class="author"><a href={site_url(&key_route)} class="nametext glitch"><ScrambleTitle text={props.bundle.site.author.clone()} profile={GlitchProfile::Brand} /></a></div>
                         <div class="info"><div class="infochild"><Typewriter roles={roles} /></div></div>
                     </div>
                 </div>
@@ -1451,14 +1451,6 @@ struct PageProps {
 
 #[function_component(PageView)]
 fn page_view(props: &PageProps) -> Html {
-    if props.page.content_type == "identity" {
-        let key_route = props
-            .bundle
-            .page_of_type("key")
-            .map(|page| page.route.clone())
-            .unwrap_or_else(|| "/".into());
-        return html! { <LogoPage page={props.page.clone()} key_route={key_route} /> };
-    }
     match props.page.kind {
         PageKind::Post => {
             html! { <PostPage bundle={props.bundle.clone()} page={props.page.clone()} /> }
@@ -1474,25 +1466,9 @@ fn page_view(props: &PageProps) -> Html {
     }
 }
 
-#[function_component(LogoPage)]
-fn logo_page(props: &LogoPageProps) -> Html {
-    html! {
-        <section class="container centered estate logo-page">
-            <h1 class="faqe-visually-hidden">{&props.page.title}</h1>
-            {logo_document_view(&props.page.document, &props.key_route)}
-        </section>
-    }
-}
-
 #[derive(Properties, PartialEq)]
 struct OnePageProps {
     page: Page,
-}
-
-#[derive(Properties, PartialEq)]
-struct LogoPageProps {
-    page: Page,
-    key_route: String,
 }
 
 #[function_component(FrontPage)]
@@ -3602,58 +3578,6 @@ fn inline_document_view(document: &Document) -> Html {
         }
     }
     document_view(document)
-}
-
-fn logo_document_view(document: &Document, key_route: &str) -> Html {
-    html! { <>{for document.nodes.iter().map(|node| render_logo_node(node, key_route))}</> }
-}
-
-fn render_logo_node(node: &DocumentNode, key_route: &str) -> Html {
-    match node {
-        DocumentNode::Text { value } => Html::from(value.clone()),
-        DocumentNode::Element(element) => {
-            let is_key = element
-                .attributes
-                .get("class")
-                .is_some_and(|class| class.split_whitespace().any(|name| name == "svgmiddle"));
-            let mut tag = VTag::new(if is_key {
-                "a".to_owned()
-            } else {
-                element.tag.clone()
-            });
-            for (name, value) in &element.attributes {
-                let value = if matches!(name.as_str(), "href" | "src") && value.starts_with('/') {
-                    site_url(value)
-                } else {
-                    value.clone()
-                };
-                tag.attributes.get_mut_index_map().insert(
-                    AttrValue::from(name.clone()),
-                    (AttrValue::from(value), ApplyAttributeAs::Attribute),
-                );
-            }
-            if is_key {
-                tag.attributes.get_mut_index_map().insert(
-                    AttrValue::from("href"),
-                    (
-                        AttrValue::from(site_url(key_route)),
-                        ApplyAttributeAs::Attribute,
-                    ),
-                );
-                tag.attributes.get_mut_index_map().insert(
-                    AttrValue::from("aria-label"),
-                    (
-                        AttrValue::from("Open public PGP key"),
-                        ApplyAttributeAs::Attribute,
-                    ),
-                );
-            }
-            for child in &element.children {
-                tag.add_child(render_logo_node(child, key_route));
-            }
-            tag.into()
-        }
-    }
 }
 
 fn render_document_node(node: &DocumentNode) -> Html {

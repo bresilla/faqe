@@ -17,11 +17,8 @@ content/
   posts/.../*.md       # type = "post"
   talks/_index.md      # visible dirstruct of presentations
   talks/.../*.md       # Presenterm-compatible Markdown
-  identity/_index.md   # indirect identity/video surface
   key/_index.md        # indirect public-key surface
   quotes/_index.md     # indirect footer destination
-  skills/_index.md     # indirect skills/progress surface
-  lists/_index.md      # indirect lists surface
 ```
 
 Top-level folder descriptors require `type`, `visibility`, `title`, and `slug`.
@@ -60,14 +57,13 @@ slug = "quotes"
 repeats the same dirstruct type and item type. Post items have an explicit type
 matching the containing dirstruct. Presentation items inherit their type from
 the folder and use Presenterm YAML instead. Singleton folders contain only
-`_index.md`. Current singleton types are `home`, `about`, `cv`, `identity`,
-`key`, `quotes`, `skills`, and `list`.
+`_index.md`. Current singleton types are `home`, `about`, `cv`, `key`, and
+`quotes`.
 
 The application resolves indirect destinations by type rather than hard-coded
-paths: the home identity link targets `identity`, the reviewed identity key
-targets `key`, and footer quotes target `quotes`. The `skills` and `list`
-surfaces are linked from authored content. Changing one of their descriptor
-slugs therefore changes its public route without requiring a renderer edit.
+paths: the home logo targets `key`, and footer quotes target `quotes`. Changing
+one of their descriptor slugs therefore changes its public route without
+requiring a renderer edit.
 
 Folder descriptors, singleton pages, and posts start with TOML between `+++`
 lines. Presentations use the YAML front matter defined by Presenterm. Ordinary

@@ -243,8 +243,6 @@ Implemented and verified in the second visual/interaction round, while their
 larger page captures may still fail for unrelated remaining differences:
 
 - inline mobile navigation title flow and accent-backed mobile brand;
-- legacy float-based progressbar geometry and the intended hybrid 768px CSS
-  cascade, with exact 767/768/769 browser assertions now passing;
 - the then-current Work Sans fallback, resume-specific layout/heading/profile rules, exact
   inset article separator, and legible static reduced-motion glitch layers;
 - vertical `side-by-side` slide layout, corrected Reveal margin scale,
@@ -359,8 +357,8 @@ legacy-capture artifacts and from intentional accessibility/offline changes.
   measured; Work Sans is removed. Do not fall back to Georgia or claim exact
   legacy-font parity.
 - Several late CSS overrides contradicted the legacy rules: accent navigation
-  titles, light card-title weight, a neutral article-separator guess, flex
-  progressbar normalization, and resume inheritance. Prefer scoped component
+  titles, light card-title weight, a neutral article-separator guess, and
+  resume inheritance. Prefer scoped component
   corrections over another global override layer.
 - Exact 767px, 768px, and 769px browser assertions now preserve the legacy
   boundary deliberately. At 767px navigation, headings, estate, and progress
@@ -457,8 +455,8 @@ legacy-capture artifacts and from intentional accessibility/offline changes.
 
 #### Ranked continuation from this audit
 
-1. [x] Rebuild and validate the inline nav, floated progressbar,
-   resume-scoping, fallback-font, and side-by-side patches.
+1. [x] Rebuild and validate the inline nav, resume-scoping, fallback-font, and
+   side-by-side patches.
 2. [x] Patch homepage intrinsic width, inherited author line height, reduced-motion
    foreground text, latest-post weight, and mobile brand styling.
 3. [x] Remove the giant 404 treatment and restore ordinary size/color/width.
@@ -1013,13 +1011,10 @@ Required routes:
 
 - `/`
 - `/about/`
-- `/lists/`
-- `/progress/`
 - `/post/`
 - one long dark post
 - one long light post
 - `/resume/`
-- `/logo/`
 - `/pgp/`
 - `/talk/agro/precisionag/`
 - one taxonomy term
@@ -1583,11 +1578,6 @@ Preserve every currently used shortcode and every accepted legacy argument.
 - two-layer hover scaling and borders;
 - preserved focus treatment and safe URL validation.
 
-#### `progressbar`
-
-- legacy label/bar geometry rather than a normalized flex row;
-- responsive behavior and correct accessible values.
-
 #### `hr` reading break
 
 - reserved vertical geometry;
@@ -1605,10 +1595,8 @@ Preserve every currently used shortcode and every accepted legacy argument.
 - figure/caption desktop and phone geometry.
 
 Focused structural-shortcode coverage is now complete without adding or
-refreshing raster fixtures. The pinned interaction browser verifies the two
-About buttons' centered 250x50 geometry and safe destinations; all 28 progress
-bars' authored ARIA values and matching fill widths; command prompt width,
-padding, accent overlay, opacity, and radius; phone full-bleed holder and 90%
+refreshing raster fixtures. The pinned interaction browser verifies command
+prompt width, padding, accent overlay, opacity, and radius; phone full-bleed holder and 90%
 inner geometry for image, filled block, NOTE/INFO/WARN tips, and hide; the
 fingerprinted caption-derived image alternative; the three archived tip
 colors, split gradients, and dashed frames; and hide's collapsed state, dashed
@@ -1627,7 +1615,7 @@ media fills the rounded configured frame. These are element-level compatibility
 assertions derived from the reviewed shortcode oracle, not new page-wide
 baseline exceptions.
 
-### 10.6 About, logo, PGP, progress, resume, and 404
+### 10.6 About, PGP, resume, and 404
 
 - [x] Finish About image alignment and content width. Responsive full-width
   clearing and content ownership are implemented. The apparent phone mismatch
@@ -1635,24 +1623,14 @@ baseline exceptions.
   oracle body frame and fallback-font vertical drift. The accepted gap-free
   target retains the 5% estate plus `.6rem` article inset; deterministic browser
   assertions cover image width/float/source and paragraph ordering.
-- [x] Preserve logo video/background and secret-key interaction; all four logo
-  captures and the keyboard/click PGP target assertions pass.
 - [x] Keep PGP key bytes content-owned and emit `/public.asc` as a stable,
-  content-selected compatibility endpoint without a redundant fingerprinted
-  copy caused solely by the page link.
-- [x] Repair the PGP page button to link `/public.asc`; content-model,
-  generated-shell package, and live-browser assertions reject a fingerprinted
-  substitute.
+  content-selected compatibility endpoint.
 - [x] Restore the intended 10% accent tint on fenced Chroma surfaces. The legacy
   negative-z pseudo overlay was hidden beneath the explicit black `<pre>`
   surface; compositing the same accent/background colors directly on
   `<pre>` preserves the reviewed appearance without copied CSS or runtime oracle
   dependency. Phone PGP RMSE improved from `0.228538` to `0.222938`; the browser
   gate asserts the full-width rounded box and its local horizontal scroller.
-- [x] Restore progress-page bar geometry with the legacy escaped-float
-  label/bar mechanics and responsive cascade. Component geometry and the
-  current visual capture verify it; the page-wide desktop RMSE remains narrowly
-  above the strict threshold for unrelated residual differences.
 - [ ] Tune remaining resume typography and wrapping from the measured Gohu result. Skill
   fill animation is implemented and live-browser verified. All seven
   instantiated non-brand resume icons (envelope, phone,
@@ -2371,7 +2349,7 @@ pass.
    link/surface, About phone media, homepage typewriter, and exact glitch
    behavior, safe caption-alt derivation, authored-autoplay rejection, and
    resume component density are complete. Taxonomy-root raster captures and
-   focused block/image/tip/hide/command/button/progress/sidenote/sideimage
+   focused block/image/tip/hide/command/button/sidenote/sideimage
    browser geometry are also complete. The shared exact article/home/resume
    typography floor is now measured under Gohu and remains scoped visual-polish
    work rather than keeping this broad component item artificially open.
