@@ -89,6 +89,7 @@
             pkgs.dart-sass
             pkgs.mold
             pkgs.pkg-config
+            pkgs.presenterm
 
             nixGLAlias
             nixVulkanAlias

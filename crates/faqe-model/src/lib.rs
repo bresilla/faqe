@@ -254,6 +254,23 @@ pub fn accessible_palette(style: &PageStyle) -> Option<AccessiblePalette> {
     })
 }
 
+pub fn accessible_color(preferred: &str, background: &str) -> Option<String> {
+    let background = opaque_rgb(background, Rgb::WHITE)?;
+    let preferred = opaque_rgb(preferred, background)?;
+    Some(accessible_foreground(preferred, background, 4.55).to_hex())
+}
+
+pub fn contrasting_text(background: &str) -> Option<String> {
+    let background = opaque_rgb(background, Rgb::WHITE)?;
+    let black_ratio = contrast_rgb(Rgb::BLACK, background);
+    let white_ratio = contrast_rgb(Rgb::WHITE, background);
+    Some(if black_ratio >= white_ratio {
+        "#000000".into()
+    } else {
+        "#ffffff".into()
+    })
+}
+
 pub fn contrast_ratio(foreground: &str, background: &str) -> Option<f64> {
     let background = opaque_rgb(background, Rgb::WHITE)?;
     let foreground = opaque_rgb(foreground, background)?;

@@ -1,8 +1,9 @@
 #![cfg(any(target_arch = "wasm32", test))]
 
 use faqe_model::{
-    canonical_route, Document, DocumentNode, ElementNode, Page, PageKind, ResumeData, SiteBundle,
-    SiteMetadata, TalkSlide, Theme, TocItem, SITE_SCHEMA_VERSION,
+    accessible_color, canonical_route, contrasting_text, Document, DocumentNode, ElementNode, Page,
+    PageKind, PageStyle, ResumeData, SiteBundle, SiteMetadata, TalkSlide, Theme, TocItem,
+    SITE_SCHEMA_VERSION,
 };
 use gloo_events::EventListener;
 use gloo_timers::callback::Timeout;
@@ -2720,7 +2721,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
             <div class="line top"></div><div class="line bottom"></div><div class="line left"></div><div class="line right"></div>
             <div class="faqe-slide-background" style={background_style} aria-hidden="true"></div>
             <div class="slides" style={slides_style} aria-hidden={paused.to_string()}>
-                {if deck.slides.is_empty() { html! { <section class="present"><p>{"This presentation has no slides."}</p></section> } } else { html! { {for talk_sections(&deck.slides, current, deck_state.fragment)} } }}
+                {if deck.slides.is_empty() { html! { <section class="present"><p>{"This presentation has no slides."}</p></section> } } else { html! { {for talk_sections(&deck.slides, current, deck_state.fragment, &props.page.style)} } }}
             </div>
             <nav class="controls" aria-label="Presentation controls" data-controls-layout="bottom-right" data-controls-back-arrows="faded">
                 <a class="navigate-left faqe-talk-exit" aria-label="Exit presentation" href={site_url(&props.exit_route)}><span class="controls-arrow"></span></a>
@@ -3132,7 +3133,7 @@ fn talk_move_for_key(
 fn talk_navigation_target_is_guarded(target: &web_sys::Element) -> bool {
     target
         .closest(
-            "a[href], button, input, select, textarea, summary, pre, code, \
+            "a[href], button, input, select, textarea, summary, pre, code, video, \
              [contenteditable]:not([contenteditable='false']), [role='button'], \
              [role='link'], [role='textbox']",
         )
@@ -3406,15 +3407,20 @@ fn talk_slide_at(slides: &[TalkSlide], position: (usize, usize)) -> Option<&Talk
 fn slide_background(slide: &TalkSlide) -> SlideBackground {
     SlideBackground {
         color: slide.attributes.get("background-color").cloned(),
-        image: slide.attributes.get("background-image").map(|image| {
-            site_url(
-                image
-                    .trim()
-                    .trim_matches(['\'', '"'])
-                    .trim_matches(['(', ')']),
-            )
-        }),
+        image: slide
+            .attributes
+            .get("background-image")
+            .map(|image| site_url(image.trim().trim_matches(['\'', '"']))),
     }
+}
+
+fn css_url_value(value: &str) -> String {
+    value
+        .replace('\\', "%5C")
+        .replace('\'', "%27")
+        .replace('"', "%22")
+        .replace('(', "%28")
+        .replace(')', "%29")
 }
 
 fn slide_background_style(background: &SlideBackground) -> String {
@@ -3423,15 +3429,37 @@ fn slide_background_style(background: &SlideBackground) -> String {
         style.push_str(&format!("background-color:{color};"));
     }
     if let Some(image) = &background.image {
-        style.push_str(&format!("background-image:url('{image}');"));
+        style.push_str(&format!(
+            "background-image:url('{}');",
+            css_url_value(image)
+        ));
     }
     style
+}
+
+fn slide_palette_style(background: &SlideBackground, page_style: &PageStyle) -> String {
+    let surface = background
+        .color
+        .as_deref()
+        .unwrap_or(&page_style.background);
+    let foreground = if background.color.is_some() {
+        contrasting_text(surface).unwrap_or_else(|| page_style.foreground.clone())
+    } else {
+        page_style.foreground.clone()
+    };
+    let accent =
+        accessible_color(&page_style.accent, surface).unwrap_or_else(|| page_style.accent.clone());
+    let accent_text = contrasting_text(&accent).unwrap_or_else(|| page_style.background.clone());
+    format!(
+        "--faqe-slide-fg:{foreground};--faqe-slide-accent:{accent};--faqe-slide-accent-text:{accent_text};"
+    )
 }
 
 fn talk_sections(
     slides: &[TalkSlide],
     current: (usize, usize),
     active_fragment: usize,
+    page_style: &PageStyle,
 ) -> Vec<Html> {
     let mut sections = Vec::new();
     let mut index = 0;
@@ -3444,7 +3472,7 @@ fn talk_sections(
                 index += 1;
             }
             sections.push(
-                html! { <section class={state} aria-hidden={(state != "present").to_string()}>{for slides[start..index].iter().enumerate().map(|(vertical, slide)| talk_slide(slide, talk_nested_state(state, vertical, current.1), (horizontal, vertical), slides, active_fragment))}</section> },
+                html! { <section class={state} aria-hidden={(state != "present").to_string()}>{for slides[start..index].iter().enumerate().map(|(vertical, slide)| talk_slide(slide, talk_nested_state(state, vertical, current.1), (horizontal, vertical), slides, active_fragment, page_style))}</section> },
             );
         } else {
             sections.push(talk_slide(
@@ -3453,6 +3481,7 @@ fn talk_sections(
                 (horizontal, 0),
                 slides,
                 active_fragment,
+                page_style,
             ));
             index += 1;
         }
@@ -3487,6 +3516,7 @@ fn talk_slide(
     position: (usize, usize),
     slides: &[TalkSlide],
     active_fragment: usize,
+    page_style: &PageStyle,
 ) -> Html {
     let mut class = slide.attributes.get("class").cloned().unwrap_or_default();
     if !class.is_empty() {
@@ -3498,7 +3528,7 @@ fn talk_slide(
     class.push(' ');
     class.push_str(TransitionSpeed::parse(slide.attributes.get("transition-speed")).class());
     let background = slide_background(slide);
-    let mut print_style = String::new();
+    let mut print_style = slide_palette_style(&background, page_style);
     if let Some(color) = background.color.as_deref() {
         let _ = write!(print_style, "--faqe-print-background-color:{color};");
     }
@@ -3506,7 +3536,7 @@ fn talk_slide(
         let _ = write!(
             print_style,
             "--faqe-print-background-image:url(\"{}\");",
-            image.replace('"', "%22")
+            css_url_value(image)
         );
     }
     let id = explicit_slide_id(slide)

@@ -13,7 +13,9 @@ faqe-model = { path = "../faqe-model" }
 html5ever.workspace = true
 pulldown-cmark.workspace = true
 regex.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 sha2.workspace = true
 toml.workspace = true
 tree-sitter-bash.workspace = true

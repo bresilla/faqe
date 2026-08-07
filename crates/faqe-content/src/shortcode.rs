@@ -58,14 +58,6 @@ impl ShortcodeParser {
         }
         Ok(output)
     }
-
-    pub(crate) fn named_arguments(
-        &self,
-        expression: &str,
-    ) -> Result<BTreeMap<String, String>, ShortcodeError> {
-        let (_, arguments) = parse_expression(expression, 0)?;
-        Ok(arguments.named)
-    }
 }
 
 #[derive(Default)]

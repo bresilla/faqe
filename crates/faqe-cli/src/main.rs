@@ -1413,7 +1413,10 @@ fn render_fallback_nodes(nodes: &[DocumentNode], root: &str, output: &mut String
                 }
                 output.push('>');
                 render_fallback_nodes(&element.children, root, output);
-                if !matches!(rendered_tag.as_str(), "br" | "hr" | "img" | "input" | "wbr") {
+                if !matches!(
+                    rendered_tag.as_str(),
+                    "br" | "hr" | "img" | "input" | "source" | "wbr"
+                ) {
                     let _ = write!(output, "</{rendered_tag}>");
                 }
             }

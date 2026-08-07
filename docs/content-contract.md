@@ -16,7 +16,7 @@ content/
   posts/_index.md      # visible dirstruct of post items
   posts/.../*.md       # type = "post"
   talks/_index.md      # visible dirstruct of presentations
-  talks/.../*.md       # type = "presentation"
+  talks/.../*.md       # Presenterm-compatible Markdown
   identity/_index.md   # indirect identity/video surface
   key/_index.md        # indirect public-key surface
   quotes/_index.md     # indirect footer destination
@@ -57,10 +57,11 @@ slug = "quotes"
 
 `type = "dirstruct"` declares a recursive collection and requires
 `item_type = "post"` or `item_type = "presentation"`. Every nested `_index.md`
-repeats the same dirstruct type and item type. Every ordinary Markdown file has
-its own explicit type, which must match the containing dirstruct. Singleton
-folders contain only `_index.md`. Current singleton types are `home`, `about`,
-`cv`, `identity`, `key`, `quotes`, `skills`, and `list`.
+repeats the same dirstruct type and item type. Post items have an explicit type
+matching the containing dirstruct. Presentation items inherit their type from
+the folder and use Presenterm YAML instead. Singleton folders contain only
+`_index.md`. Current singleton types are `home`, `about`, `cv`, `identity`,
+`key`, `quotes`, `skills`, and `list`.
 
 The application resolves indirect destinations by type rather than hard-coded
 paths: the home identity link targets `identity`, the reviewed identity key
@@ -68,11 +69,12 @@ targets `key`, and footer quotes target `quotes`. The `skills` and `list`
 surfaces are linked from authored content. Changing one of their descriptor
 slugs therefore changes its public route without requiring a renderer edit.
 
-Every Markdown file starts with TOML between `+++` lines. Ordinary items derive
-their parent route from the top-level descriptor's `slug` and their final
-segment from their own `slug`. Filenames may contain spaces or Unicode when an
-explicit lowercase ASCII slug is provided. Duplicate and case-folded routes are
-errors.
+Folder descriptors, singleton pages, and posts start with TOML between `+++`
+lines. Presentations use the YAML front matter defined by Presenterm. Ordinary
+items derive their parent route from the top-level descriptor's `slug` and
+their final segment from their own `slug` or filename. Filenames may contain
+spaces or Unicode when an explicit lowercase ASCII slug is provided. Duplicate
+and case-folded routes are errors.
 
 ## `site.toml`
 
@@ -144,11 +146,70 @@ derivation policy. Writing `alt=""` records deliberate decorative intent. This
 distinction survives the typed JSON document and is applied equally to the
 generated semantic shell and WASM view.
 
-Supported legacy shortcodes are parsed into an explicit node tree and rendered
-through typed elements, attributes, text, and raw nested-Markdown fragments.
-Text and attribute values are escaped only by the structural serializer. Slide
-attribute names may contain ASCII letters, digits, `-`, and `_`; other names
-are rejected rather than copied into generated markup.
+Supported legacy shortcodes in non-presentation content are parsed into an
+explicit node tree and rendered through typed elements, attributes, text, and
+raw nested-Markdown fragments. Text and attribute values are escaped only by
+the structural serializer.
+
+## Presentations
+
+Presentation items follow Presenterm's source contract so the same `.md` file
+can be opened by FAQE in a browser or passed directly to `presenterm` in a
+terminal. They require YAML front matter between `---` lines and do not require
+FAQE's `type = "presentation"` field. Front matter such as `title`,
+`sub_title`, `author` or `authors`, `date`, `theme`, and `options` is left in
+Presenterm's native shape. FAQE creates the same automatic introduction slide
+when title, subtitle, or author metadata is present.
+
+Slides end with `<!-- end_slide -->`. Setext headings are slide titles. FAQE
+maps Presenterm comment commands for pauses, incremental lists, alignment, font
+size, vertical centering, explicit new lines, footer suppression, skipped
+slides, speaker notes, includes, and column layouts. Unknown Presenterm
+commands remain harmless comments, keeping the source forward-compatible.
+
+```markdown
+---
+title: My presentation
+sub_title: One source for terminal and web
+author: Example Author
+theme:
+  name: dark
+---
+
+First slide
+===========
+
+Visible immediately.
+
+<!-- pause -->
+
+Visible after advancing.
+
+<!-- end_slide -->
+
+Second slide
+============
+```
+
+Presenterm image attributes remain valid, including
+`![image:width:50%](image.png)`. Local images use the normal relative asset
+resolution and fingerprinting path. A standard Markdown link to a local
+`.mp4`, `.webm`, or `.ogg` file remains a link in Presenterm and is upgraded to
+an embedded player by FAQE's browser renderer. This keeps the source valid for
+both renderers without adding a FAQE-only shortcode.
+
+FAQE reads Presenterm theme overrides for `default.colors.foreground`,
+`default.colors.background`, `palette.colors.accent`,
+`palette.colors.chromatic`, and `slide_title.colors.foreground`. The browser
+theme uses those values for its page palette and computes accessible text and
+interactive colors for the selected background.
+
+FAQE-only card and taxonomy metadata stays out of the shared Markdown. An
+optional sibling named `<deck>.faqe.toml` may contain only `slug`, `thumbnail`,
+`foot`, `link`, `part`, `credits`, `tags`, `categories`, and `series`. New decks
+should normally derive their route from the filename and omit the sidecar. This
+keeps every presentation file valid under Presenterm's default strict front
+matter parser.
 
 ### Decorative background video
 

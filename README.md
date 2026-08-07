@@ -34,6 +34,12 @@ folder visibility/weight owns navigation; neither is duplicated in `site.toml`.
 See [the content directory contract](docs/content-contract.md) for deterministic
 discovery, front matter, sections, routes, symlinks, and media rules.
 
+Presentation items use Presenterm's YAML front matter, `<!-- end_slide -->`
+boundaries, and comment commands directly. Run the example in a terminal with
+`make present`, or choose another deck with
+`make present PRESENTATION=content/talks/agro/precisionag.md`; FAQE renders the
+same file as an accent-aware browser presentation.
+
 Use `--base-url /name/` with `faqe build` when publishing below a domain
 subpath. Builds are deterministic and atomic: invalid content leaves the last
 good output untouched. `faqe check` exercises the complete generator and

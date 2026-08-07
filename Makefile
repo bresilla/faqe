@@ -5,6 +5,7 @@ PROJECT_VERSION := $(shell sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)
 CARGO := cargo
 WEB_TARGET := wasm32-unknown-unknown
 SERVE_BIND ?= 0.0.0.0:3000
+PRESENTATION ?= content/talks/code/theme-showcase.md
 WASM_BINDGEN_VERSION := $(shell sed -n 's/^wasm-bindgen[[:space:]]*=[[:space:]]*"=\([^"]*\)".*/\1/p' Cargo.toml)
 WEB_PROFILE ?= debug
 WEB_CARGO_DIR := $(CURDIR)/target/$(WEB_TARGET)/$(WEB_PROFILE)
@@ -24,7 +25,7 @@ $(info ------------------------------------------)
 $(info Project: $(PROJECT_NAME) v$(PROJECT_VERSION))
 $(info ------------------------------------------)
 
-.PHONY: build b compile c web-bundle release-web-bundle release-build serve run r check check-all content-check fmt fmt-check clippy rustdoc clean verify verify-all toolchain-check package-files package release help h
+.PHONY: build b compile c web-bundle release-web-bundle release-build serve run r present check check-all content-check fmt fmt-check clippy rustdoc clean verify verify-all toolchain-check package-files package release help h
 
 build: web-bundle
 	@$(CARGO) build -p faqe-cli
@@ -60,6 +61,9 @@ serve: build
 run: serve
 
 r: run
+
+present:
+	@presenterm "$(PRESENTATION)"
 
 check: web-bundle
 	@$(CARGO) check --workspace --all-targets
@@ -131,6 +135,7 @@ help:
 	@echo "  build          Build WASM assets and the native faqe binary"
 	@echo "  release-build  Build an optimized one-binary release"
 	@echo "  serve          Build and preview ./content"
+	@echo "  present        Open PRESENTATION with Presenterm"
 	@echo "  check          Check every workspace target"
 	@echo "  check-all      Check all workspace targets and features"
 	@echo "  content-check  Validate the website content submodule"

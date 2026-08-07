@@ -91,6 +91,7 @@ const SAFE_HTML_TAGS: &[&str] = &[
     "samp",
     "section",
     "small",
+    "source",
     "span",
     "strong",
     "sub",
@@ -108,6 +109,7 @@ const SAFE_HTML_TAGS: &[&str] = &[
     "u",
     "ul",
     "var",
+    "video",
     "wbr",
 ];
 
@@ -880,11 +882,32 @@ fn validate_public_manifest_path(
 /// deliberately a small front-matter-only pass: a draft must not influence the
 /// public bundle, route graph, diagnostics, or emitted asset set.
 fn source_is_published(path: &Path, source: &str) -> Result<bool, ContentError> {
-    let (front_matter, _) =
-        split_front_matter(source).map_err(|message| ContentError::FrontMatter {
-            path: path.to_owned(),
-            message,
-        })?;
+    let yaml = source
+        .lines()
+        .next()
+        .is_some_and(|line| line.trim_end_matches('\r') == "---");
+    let (front_matter, _) = if yaml {
+        split_yaml_front_matter(source)
+    } else {
+        split_front_matter(source)
+    }
+    .map_err(|message| ContentError::FrontMatter {
+        path: path.to_owned(),
+        message,
+    })?;
+    if yaml {
+        let value = parse_presenterm_front_matter(path, front_matter)?;
+        return match yaml_string(&value, &["status"]) {
+            None | Some("published") => Ok(true),
+            Some("draft") | Some("unpublished") => Ok(false),
+            Some(status) => Err(ContentError::FrontMatter {
+                path: path.to_owned(),
+                message: format!(
+                    "status {status:?} is unsupported; expected published, draft, or unpublished"
+                ),
+            }),
+        };
+    }
     let value = front_matter
         .parse::<toml::Value>()
         .map_err(|error| ContentError::FrontMatter {
@@ -1090,22 +1113,6 @@ fn parse_page(
     folders: &BTreeMap<String, FolderSpec>,
 ) -> Result<Page, ContentError> {
     let source_path = slash_path(relative_path);
-    let (front_matter, body) =
-        split_front_matter(source).map_err(|message| ContentError::FrontMatter {
-            path: relative_path.to_owned(),
-            message,
-        })?;
-    let value = front_matter
-        .parse::<toml::Value>()
-        .map_err(|error| ContentError::FrontMatter {
-            path: relative_path.to_owned(),
-            message: toml_diagnostic(front_matter, &error),
-        })?;
-    let table = value.as_table().ok_or_else(|| ContentError::FrontMatter {
-        path: relative_path.to_owned(),
-        message: "top-level value must be a TOML table".into(),
-    })?;
-
     let is_section = relative_path
         .file_name()
         .is_some_and(|name| name == "_index.md");
@@ -1126,6 +1133,40 @@ fn parse_page(
             path: relative_path.to_owned(),
             message: "Markdown belongs to an undeclared top-level content folder".into(),
         })?;
+    let is_presenterm = !is_section && folder.item_type.as_deref() == Some("presentation");
+    let (front_matter, body) = if is_presenterm {
+        split_yaml_front_matter(source)
+    } else {
+        split_front_matter(source)
+    }
+    .map_err(|message| ContentError::FrontMatter {
+        path: relative_path.to_owned(),
+        message,
+    })?;
+    let presenterm = if is_presenterm {
+        Some(parse_presenterm_front_matter(relative_path, front_matter)?)
+    } else {
+        None
+    };
+    let table = if let Some(value) = presenterm.as_ref() {
+        presenterm_page_table(content_root, relative_path, value)?
+    } else {
+        let value =
+            front_matter
+                .parse::<toml::Value>()
+                .map_err(|error| ContentError::FrontMatter {
+                    path: relative_path.to_owned(),
+                    message: toml_diagnostic(front_matter, &error),
+                })?;
+        value
+            .as_table()
+            .cloned()
+            .ok_or_else(|| ContentError::FrontMatter {
+                path: relative_path.to_owned(),
+                message: "top-level value must be a TOML table".into(),
+            })?
+    };
+    let table = &table;
     let is_folder_root = is_section && relative_path.components().count() == 2;
     let content_type = string(table, "type").ok_or_else(|| ContentError::FrontMatter {
         path: relative_path.to_owned(),
@@ -1196,7 +1237,13 @@ fn parse_page(
     let slug = string(table, "slug").unwrap_or(fallback_slug).to_owned();
     validate_slug(relative_path, &slug)?;
     let title = string(table, "title")
-        .map(ToOwned::to_owned)
+        .map(|title| {
+            if is_presenterm {
+                markdown_plain_text(title)
+            } else {
+                title.to_owned()
+            }
+        })
         .unwrap_or_else(|| humanize_slug(&slug));
     let has_explicit_title = table.contains_key("title");
     let route = route_for(relative_path, &slug, is_section, folder);
@@ -1222,7 +1269,10 @@ fn parse_page(
             message: "style autoplay is not an authoring option; FAQE controls decorative background playback and honors user motion/data preferences".into(),
         });
     }
-    let mut style = parse_style(table.get("style"), default_style);
+    let mut style = presenterm.as_ref().map_or_else(
+        || parse_style(table.get("style"), default_style),
+        |value| parse_presenterm_style(value, default_style),
+    );
     validate_style(relative_path, &style)?;
     if let Some(video) = style.video.take() {
         style.video = Some(resolve_asset_url(
@@ -1292,7 +1342,13 @@ fn parse_page(
             page_path: relative_path,
             assets,
         };
-        Some(parse_talk(body, shortcode_parser, &mut context)?)
+        Some(parse_talk(
+            body,
+            presenterm
+                .as_ref()
+                .expect("talk pages require Presenterm front matter"),
+            &mut context,
+        )?)
     } else {
         None
     };
@@ -1318,7 +1374,13 @@ fn parse_page(
         status,
         date,
         foot: string(table, "foot").map(ToOwned::to_owned),
-        description: string(table, "description").map(ToOwned::to_owned),
+        description: string(table, "description").map(|description| {
+            if is_presenterm {
+                markdown_plain_text(description)
+            } else {
+                description.to_owned()
+            }
+        }),
         punchline: string(table, "punchline").map(ToOwned::to_owned),
         tldr: string(table, "tldr").map(ToOwned::to_owned),
         thumbnail,
@@ -1544,17 +1606,222 @@ struct TalkParseContext<'a> {
     assets: &'a mut BTreeMap<String, ContentAsset>,
 }
 
+fn parse_presenterm_front_matter(
+    path: &Path,
+    source: &str,
+) -> Result<serde_yaml::Value, ContentError> {
+    let value = serde_yaml::from_str::<serde_yaml::Value>(source).map_err(|error| {
+        ContentError::FrontMatter {
+            path: path.to_owned(),
+            message: format!("invalid Presenterm YAML: {error}"),
+        }
+    })?;
+    if !value.is_mapping() {
+        return Err(ContentError::FrontMatter {
+            path: path.to_owned(),
+            message: "Presenterm front matter must be a YAML mapping".into(),
+        });
+    }
+    Ok(value)
+}
+
+fn yaml_value_at<'a>(value: &'a serde_yaml::Value, path: &[&str]) -> Option<&'a serde_yaml::Value> {
+    let mut value = value;
+    for key in path {
+        value = value
+            .as_mapping()?
+            .get(serde_yaml::Value::String((*key).into()))?;
+    }
+    Some(value)
+}
+
+fn yaml_string<'a>(value: &'a serde_yaml::Value, path: &[&str]) -> Option<&'a str> {
+    yaml_value_at(value, path).and_then(serde_yaml::Value::as_str)
+}
+
+fn yaml_to_toml(value: &serde_yaml::Value) -> Option<toml::Value> {
+    match value {
+        serde_yaml::Value::Null => None,
+        serde_yaml::Value::Bool(value) => Some(toml::Value::Boolean(*value)),
+        serde_yaml::Value::Number(value) => value
+            .as_i64()
+            .map(toml::Value::Integer)
+            .or_else(|| value.as_f64().map(toml::Value::Float)),
+        serde_yaml::Value::String(value) => Some(toml::Value::String(value.clone())),
+        serde_yaml::Value::Sequence(values) => Some(toml::Value::Array(
+            values.iter().filter_map(yaml_to_toml).collect(),
+        )),
+        serde_yaml::Value::Mapping(values) => {
+            let mut table = toml::Table::new();
+            for (key, value) in values {
+                let key = key.as_str()?;
+                if let Some(value) = yaml_to_toml(value) {
+                    table.insert(key.to_owned(), value);
+                }
+            }
+            Some(toml::Value::Table(table))
+        }
+        serde_yaml::Value::Tagged(value) => yaml_to_toml(&value.value),
+    }
+}
+
+fn presenterm_page_table(
+    content_root: &Path,
+    path: &Path,
+    value: &serde_yaml::Value,
+) -> Result<toml::Table, ContentError> {
+    let mut table = yaml_to_toml(value)
+        .and_then(|value| value.as_table().cloned())
+        .ok_or_else(|| ContentError::FrontMatter {
+            path: path.to_owned(),
+            message: "Presenterm front matter must use string keys".into(),
+        })?;
+    table.insert("type".into(), toml::Value::String("presentation".into()));
+    if !table.contains_key("description") {
+        if let Some(subtitle) = yaml_string(value, &["sub_title"]) {
+            table.insert(
+                "description".into(),
+                toml::Value::String(markdown_plain_text(subtitle)),
+            );
+        }
+    }
+    let sidecar_path = path.with_extension("faqe.toml");
+    let absolute_sidecar = content_root.join(&sidecar_path);
+    if absolute_sidecar.exists() {
+        let canonical_sidecar =
+            fs::canonicalize(&absolute_sidecar).map_err(|source| ContentError::Io {
+                path: sidecar_path.clone(),
+                source,
+            })?;
+        if !canonical_sidecar.starts_with(content_root) || !canonical_sidecar.is_file() {
+            return Err(ContentError::InvalidPath {
+                path: sidecar_path,
+                message: "presentation sidecar escapes the content root or is not a file".into(),
+            });
+        }
+        let size = fs::metadata(&canonical_sidecar)
+            .map_err(|source| ContentError::Io {
+                path: canonical_sidecar.clone(),
+                source,
+            })?
+            .len();
+        if size > MAX_SITE_CONFIG_BYTES {
+            return Err(ContentError::InvalidPath {
+                path: sidecar_path,
+                message: format!(
+                    "presentation sidecar is {size} bytes; limit is {MAX_SITE_CONFIG_BYTES} bytes"
+                ),
+            });
+        }
+        let source = fs::read_to_string(&canonical_sidecar).map_err(|source| ContentError::Io {
+            path: sidecar_path.clone(),
+            source,
+        })?;
+        let sidecar = source
+            .parse::<toml::Table>()
+            .map_err(|error| ContentError::FrontMatter {
+                path: sidecar_path.clone(),
+                message: toml_diagnostic(&source, &error),
+            })?;
+        const SIDECAR_KEYS: &[&str] = &[
+            "categories",
+            "credits",
+            "foot",
+            "link",
+            "part",
+            "series",
+            "slug",
+            "tags",
+            "thumbnail",
+        ];
+        if let Some(key) = sidecar
+            .keys()
+            .find(|key| !SIDECAR_KEYS.contains(&key.as_str()))
+        {
+            return Err(ContentError::FrontMatter {
+                path: sidecar_path,
+                message: format!("unsupported presentation sidecar field {key:?}"),
+            });
+        }
+        table.extend(sidecar);
+    }
+    Ok(table)
+}
+
+fn presenterm_color(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    let normalized = value.strip_prefix('#').unwrap_or(value);
+    matches!(normalized.len(), 3 | 4 | 6 | 8)
+        .then(|| normalized.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .filter(|valid| *valid)
+        .map(|_| format!("#{normalized}"))
+}
+
+fn parse_presenterm_style(value: &serde_yaml::Value, defaults: &PageStyle) -> PageStyle {
+    let mut style = defaults.clone();
+    let theme_name = yaml_string(value, &["theme", "name"]);
+    if theme_name.is_some_and(|name| name.contains("light") || name.ends_with("-day")) {
+        style.theme = Theme::Light;
+        std::mem::swap(&mut style.background, &mut style.foreground);
+    } else if theme_name.is_some() {
+        style.theme = Theme::Dark;
+    }
+    if let Some(background) = presenterm_color(yaml_string(
+        value,
+        &["theme", "override", "default", "colors", "background"],
+    )) {
+        style.background = background;
+    }
+    if let Some(foreground) = presenterm_color(yaml_string(
+        value,
+        &["theme", "override", "default", "colors", "foreground"],
+    )) {
+        style.foreground = foreground;
+    }
+    let accent = presenterm_color(
+        yaml_string(value, &["theme", "override", "palette", "colors", "accent"]).or_else(|| {
+            yaml_string(
+                value,
+                &["theme", "override", "slide_title", "colors", "foreground"],
+            )
+        }),
+    );
+    if let Some(accent) = accent {
+        style.accent = accent.clone();
+        style.chromatic[0] = accent.clone();
+        style.chromatic[1] = presenterm_color(yaml_string(
+            value,
+            &["theme", "override", "palette", "colors", "chromatic"],
+        ))
+        .or_else(|| chromatic_partner(&accent))
+        .unwrap_or_else(|| defaults.chromatic[1].clone());
+    }
+    style.video = None;
+    style
+}
+
+fn markdown_plain_text(markdown: &str) -> String {
+    let (html, _) = markdown_to_html(markdown);
+    Regex::new(r"<[^>]+>")
+        .expect("valid HTML tag regex")
+        .replace_all(&html, "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn parse_talk(
     source: &str,
-    shortcode_parser: &ShortcodeParser,
+    front_matter: &serde_yaml::Value,
     context: &mut TalkParseContext<'_>,
 ) -> Result<TalkDeck, ContentError> {
     let mut slides = Vec::new();
     let mut markdown = String::new();
-    let mut attributes = BTreeMap::new();
-    let mut vertical_group = None;
-    let mut next_group = 0usize;
     let mut fence = None;
+
+    if let Some(slide) = presenterm_intro_slide(front_matter, context)? {
+        slides.push(slide);
+    }
 
     for line in source.lines() {
         let trimmed = line.trim();
@@ -1568,69 +1835,14 @@ fn parse_talk(
             fence = Some(marker);
             markdown.push_str(line);
             markdown.push('\n');
-        } else if is_shortcode_line(trimmed, "slide") {
-            push_talk_slide(
-                &mut slides,
-                &mut markdown,
-                &mut attributes,
-                vertical_group,
-                shortcode_parser,
-                context,
-            )?;
-            attributes = shortcode_parser
-                .named_arguments(shortcode_expression(trimmed).map_err(|source| {
-                    ContentError::Shortcode {
-                        path: context.page_path.to_owned(),
-                        source,
-                    }
-                })?)
-                .map_err(|source| ContentError::Shortcode {
-                    path: context.page_path.to_owned(),
-                    source,
-                })?;
-        } else if is_shortcode_line(trimmed, "section") {
-            push_talk_slide(
-                &mut slides,
-                &mut markdown,
-                &mut attributes,
-                vertical_group,
-                shortcode_parser,
-                context,
-            )?;
-            vertical_group = Some(next_group);
-            next_group += 1;
-        } else if is_closing_shortcode_line(trimmed, "section") {
-            push_talk_slide(
-                &mut slides,
-                &mut markdown,
-                &mut attributes,
-                vertical_group,
-                shortcode_parser,
-                context,
-            )?;
-            vertical_group = None;
-        } else if trimmed == "---" {
-            push_talk_slide(
-                &mut slides,
-                &mut markdown,
-                &mut attributes,
-                vertical_group,
-                shortcode_parser,
-                context,
-            )?;
+        } else if trimmed == "<!-- end_slide -->" {
+            push_presenterm_slide(&mut slides, &mut markdown, context)?;
         } else {
             markdown.push_str(line);
             markdown.push('\n');
         }
     }
-    push_talk_slide(
-        &mut slides,
-        &mut markdown,
-        &mut attributes,
-        vertical_group,
-        shortcode_parser,
-        context,
-    )?;
+    push_presenterm_slide(&mut slides, &mut markdown, context)?;
     Ok(TalkDeck { slides })
 }
 
@@ -1658,62 +1870,587 @@ fn is_closing_fence(line: &str, marker: char, opening_length: usize) -> bool {
     length >= opening_length && trimmed[length..].trim().is_empty()
 }
 
-fn push_talk_slide(
+fn presenterm_intro_slide(
+    front_matter: &serde_yaml::Value,
+    context: &mut TalkParseContext<'_>,
+) -> Result<Option<TalkSlide>, ContentError> {
+    let title = yaml_string(front_matter, &["title"]);
+    let subtitle = yaml_string(front_matter, &["sub_title"]);
+    let author = yaml_string(front_matter, &["author"]);
+    let authors = yaml_value_at(front_matter, &["authors"])
+        .and_then(serde_yaml::Value::as_sequence)
+        .map(|authors| {
+            authors
+                .iter()
+                .filter_map(serde_yaml::Value::as_str)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if title.is_none() && subtitle.is_none() && author.is_none() && authors.is_empty() {
+        return Ok(None);
+    }
+    let mut markdown = String::new();
+    if let Some(title) = title {
+        markdown.push_str("# ");
+        markdown.push_str(title);
+        markdown.push_str("\n\n");
+    }
+    if let Some(subtitle) = subtitle {
+        markdown.push_str(subtitle);
+        markdown.push_str("\n\n");
+    }
+    if let Some(author) = author {
+        markdown.push_str("**");
+        markdown.push_str(author);
+        markdown.push_str("**\n");
+    } else if !authors.is_empty() {
+        markdown.push_str("**");
+        markdown.push_str(&authors.join(" · "));
+        markdown.push_str("**\n");
+    }
+    let document = presenterm_markdown_document(&markdown, context, false)?;
+    Ok(Some(TalkSlide {
+        document,
+        attributes: BTreeMap::from([("class".into(), "title-slide".into())]),
+        vertical_group: None,
+    }))
+}
+
+struct PresentermColumns {
+    weights: Vec<u32>,
+    nodes: Vec<Vec<DocumentNode>>,
+}
+
+fn push_presenterm_slide(
     slides: &mut Vec<TalkSlide>,
+    source: &mut String,
+    context: &mut TalkParseContext<'_>,
+) -> Result<(), ContentError> {
+    if source.trim().is_empty() {
+        source.clear();
+        return Ok(());
+    }
+    let mut roots = Vec::new();
+    let mut notes = Vec::new();
+    let mut buffer = String::new();
+    let mut attributes = BTreeMap::new();
+    let mut fragment = false;
+    let mut incremental_lists = false;
+    let mut columns: Option<PresentermColumns> = None;
+    let mut column = None;
+    let mut skip = false;
+    let mut fence = None;
+    let (source_without_notes, multiline_notes) = extract_presenterm_notes(source);
+    for note in multiline_notes {
+        notes.extend(presenterm_markdown_document(&note, context, false)?.nodes);
+    }
+
+    for line in source_without_notes.lines() {
+        let trimmed = line.trim();
+        if let Some((marker, length)) = fence {
+            buffer.push_str(line);
+            buffer.push('\n');
+            if is_closing_fence(line, marker, length) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(marker) = opening_fence(line) {
+            fence = Some(marker);
+            buffer.push_str(line);
+            buffer.push('\n');
+            continue;
+        }
+        let Some((command, value)) = presenterm_command(trimmed) else {
+            buffer.push_str(line);
+            buffer.push('\n');
+            continue;
+        };
+        flush_presenterm_segment(
+            &mut buffer,
+            &mut roots,
+            columns.as_mut(),
+            column,
+            fragment,
+            incremental_lists,
+            context,
+        )?;
+        match command {
+            "pause" => fragment = true,
+            "jump_to_middle" => add_class(&mut attributes, "jump-middle"),
+            "no_footer" => add_class(&mut attributes, "no-footer"),
+            "skip_slide" => skip = true,
+            "alignment" => match value {
+                Some("left" | "center" | "right") => {
+                    add_class(&mut attributes, &format!("align-{}", value.unwrap()))
+                }
+                _ => {
+                    return Err(presenterm_command_error(
+                        context,
+                        "alignment must be left, center, or right",
+                    ))
+                }
+            },
+            "font_size" => {
+                let size = value.and_then(|value| value.parse::<u8>().ok());
+                if !matches!(size, Some(1..=7)) {
+                    return Err(presenterm_command_error(
+                        context,
+                        "font_size must be between 1 and 7",
+                    ));
+                }
+                add_class(&mut attributes, &format!("font-size-{}", size.unwrap()));
+            }
+            "incremental_lists" => {
+                incremental_lists = match value {
+                    Some("true") => true,
+                    Some("false") => false,
+                    _ => {
+                        return Err(presenterm_command_error(
+                            context,
+                            "incremental_lists must be true or false",
+                        ))
+                    }
+                };
+            }
+            "list_item_newlines" => {
+                let count = value
+                    .and_then(|value| value.parse::<u8>().ok())
+                    .unwrap_or(0);
+                add_class(&mut attributes, &format!("list-lines-{count}"));
+            }
+            "new_line" | "newline" => {
+                push_presenterm_breaks(1, &mut roots, columns.as_mut(), column, fragment)
+            }
+            "new_lines" | "newlines" => {
+                let count = value
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(1);
+                push_presenterm_breaks(
+                    count.min(20),
+                    &mut roots,
+                    columns.as_mut(),
+                    column,
+                    fragment,
+                );
+            }
+            "column_layout" => {
+                finish_presenterm_columns(&mut roots, &mut columns);
+                let weights = parse_column_weights(value.unwrap_or_default()).ok_or_else(|| {
+                    presenterm_command_error(
+                        context,
+                        "column_layout must contain positive integer weights",
+                    )
+                })?;
+                let nodes = vec![Vec::new(); weights.len()];
+                columns = Some(PresentermColumns { weights, nodes });
+                column = None;
+            }
+            "column" => {
+                let index = value.and_then(|value| value.parse::<usize>().ok());
+                if columns
+                    .as_ref()
+                    .is_none_or(|columns| index.is_none_or(|index| index >= columns.nodes.len()))
+                {
+                    return Err(presenterm_command_error(
+                        context,
+                        "column must select an index from the active column_layout",
+                    ));
+                }
+                column = index;
+            }
+            "reset_layout" => {
+                finish_presenterm_columns(&mut roots, &mut columns);
+                column = None;
+            }
+            "speaker_note" | "speaker_notes" => {
+                if let Some(value) = value {
+                    notes.extend(presenterm_markdown_document(value, context, false)?.nodes);
+                }
+            }
+            "include" => {
+                let include = value.ok_or_else(|| {
+                    presenterm_command_error(context, "include requires a relative Markdown path")
+                })?;
+                buffer.push_str(&load_presenterm_include(include, context)?);
+                buffer.push('\n');
+            }
+            "comment" | "//" => {}
+            _ => {}
+        }
+    }
+    flush_presenterm_segment(
+        &mut buffer,
+        &mut roots,
+        columns.as_mut(),
+        column,
+        fragment,
+        incremental_lists,
+        context,
+    )?;
+    finish_presenterm_columns(&mut roots, &mut columns);
+    if !notes.is_empty() {
+        roots.push(DocumentNode::Element(ElementNode {
+            kind: ElementKind::Quote,
+            tag: "aside".into(),
+            attributes: BTreeMap::from([("class".into(), "notes".into())]),
+            children: notes,
+        }));
+    }
+    source.clear();
+    if !skip && !roots.is_empty() {
+        slides.push(TalkSlide {
+            document: Document { nodes: roots },
+            attributes,
+            vertical_group: None,
+        });
+    }
+    Ok(())
+}
+
+fn extract_presenterm_notes(source: &str) -> (String, Vec<String>) {
+    let comments = Regex::new(r"(?s)<!--\s*\r?\n(?P<body>.*?)\r?\n\s*-->")
+        .expect("valid multiline comment regex");
+    let mut notes = Vec::new();
+    let source = comments
+        .replace_all(source, |captures: &Captures<'_>| {
+            let body = captures.name("body").map_or("", |body| body.as_str());
+            let note = serde_yaml::from_str::<serde_yaml::Value>(body)
+                .ok()
+                .and_then(|value| {
+                    yaml_string(&value, &["speaker_note"])
+                        .or_else(|| yaml_string(&value, &["speaker_notes"]))
+                        .map(ToOwned::to_owned)
+                });
+            if let Some(note) = note {
+                notes.push(note);
+                String::new()
+            } else {
+                captures[0].to_owned()
+            }
+        })
+        .into_owned();
+    (source, notes)
+}
+
+fn presenterm_command(line: &str) -> Option<(&str, Option<&str>)> {
+    let inner = line.strip_prefix("<!--")?.strip_suffix("-->")?.trim();
+    if inner.is_empty() {
+        return None;
+    }
+    if let Some(comment) = inner.strip_prefix("//") {
+        return Some(("//", Some(comment.trim())));
+    }
+    let (command, value) = inner
+        .split_once(':')
+        .map_or((inner, None), |(command, value)| {
+            (command.trim(), Some(value.trim()))
+        });
+    Some((command, value))
+}
+
+fn presenterm_command_error(context: &TalkParseContext<'_>, message: &str) -> ContentError {
+    ContentError::FrontMatter {
+        path: context.page_path.to_owned(),
+        message: format!("invalid Presenterm command: {message}"),
+    }
+}
+
+fn add_class(attributes: &mut BTreeMap<String, String>, class: &str) {
+    let classes = attributes.entry("class".into()).or_default();
+    if !classes.is_empty() {
+        classes.push(' ');
+    }
+    classes.push_str(class);
+}
+
+fn flush_presenterm_segment(
     markdown: &mut String,
-    attributes: &mut BTreeMap<String, String>,
-    vertical_group: Option<usize>,
-    shortcode_parser: &ShortcodeParser,
+    roots: &mut Vec<DocumentNode>,
+    columns: Option<&mut PresentermColumns>,
+    column: Option<usize>,
+    fragment: bool,
+    incremental_lists: bool,
     context: &mut TalkParseContext<'_>,
 ) -> Result<(), ContentError> {
     if markdown.trim().is_empty() {
+        markdown.clear();
         return Ok(());
     }
-    let expanded = shortcode_parser
-        .render(markdown)
-        .map_err(|source| ContentError::Shortcode {
-            path: context.page_path.to_owned(),
-            source,
-        })?;
-    let (html, _) = markdown_to_html_resolving(&expanded, |url| {
-        resolve_asset_url(context.content_root, context.page_path, url, context.assets)
-    })?;
-    slides.push(TalkSlide {
-        document: document_from_sanitized_html(&sanitize_legacy_html(&html)),
-        attributes: std::mem::take(attributes),
-        vertical_group,
-    });
+    let mut document = presenterm_markdown_document(markdown, context, incremental_lists)?;
+    let nodes = if fragment {
+        vec![DocumentNode::Element(ElementNode {
+            kind: ElementKind::AllowedHtml,
+            tag: "div".into(),
+            attributes: BTreeMap::from([("class".into(), "fragment".into())]),
+            children: document.nodes,
+        })]
+    } else {
+        std::mem::take(&mut document.nodes)
+    };
+    if let (Some(columns), Some(index)) = (columns, column) {
+        columns.nodes[index].extend(nodes);
+    } else {
+        roots.extend(nodes);
+    }
     markdown.clear();
     Ok(())
 }
 
-fn is_shortcode_line(line: &str, name: &str) -> bool {
-    let delimited = (line.starts_with("{{<") && line.ends_with(">}}"))
-        || (line.starts_with("{{%") && line.ends_with("%}}"));
-    let expression = if delimited {
-        &line[3..line.len() - 3]
-    } else {
-        return false;
-    };
-    expression.split_whitespace().next() == Some(name)
-}
-
-fn is_closing_shortcode_line(line: &str, name: &str) -> bool {
-    let angle = format!("{{{{< /{name} >}}}}");
-    let percent = format!("{{{{% /{name} %}}}}");
-    line == angle || line == percent
-}
-
-fn shortcode_expression(line: &str) -> Result<&str, ShortcodeError> {
-    let delimited = (line.starts_with("{{<") && line.ends_with(">}}"))
-        || (line.starts_with("{{%") && line.ends_with("%}}"));
-    if !delimited {
-        return Err(ShortcodeError {
-            offset: 0,
-            message: "invalid shortcode line".into(),
-        });
+fn presenterm_markdown_document(
+    markdown: &str,
+    context: &mut TalkParseContext<'_>,
+    incremental_lists: bool,
+) -> Result<Document, ContentError> {
+    validate_active_html(context.page_path, markdown)?;
+    validate_supported_html(context.page_path, markdown)?;
+    let (html, _) = markdown_to_html_resolving(markdown, |url| {
+        resolve_asset_url(context.content_root, context.page_path, url, context.assets)
+    })?;
+    let mut document = document_from_sanitized_html(&sanitize_legacy_html(&html));
+    normalize_presenterm_media(&mut document.nodes);
+    if incremental_lists {
+        mark_presenterm_list_items(&mut document.nodes);
     }
-    Ok(line[3..line.len() - 3].trim())
+    Ok(document)
+}
+
+fn push_presenterm_breaks(
+    count: usize,
+    roots: &mut Vec<DocumentNode>,
+    columns: Option<&mut PresentermColumns>,
+    column: Option<usize>,
+    fragment: bool,
+) {
+    let breaks = (0..count)
+        .map(|_| {
+            DocumentNode::Element(ElementNode {
+                kind: ElementKind::AllowedHtml,
+                tag: "br".into(),
+                attributes: BTreeMap::new(),
+                children: Vec::new(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let nodes = if fragment {
+        vec![DocumentNode::Element(ElementNode {
+            kind: ElementKind::AllowedHtml,
+            tag: "div".into(),
+            attributes: BTreeMap::from([("class".into(), "fragment".into())]),
+            children: breaks,
+        })]
+    } else {
+        breaks
+    };
+    if let (Some(columns), Some(index)) = (columns, column) {
+        columns.nodes[index].extend(nodes);
+    } else {
+        roots.extend(nodes);
+    }
+}
+
+fn parse_column_weights(value: &str) -> Option<Vec<u32>> {
+    let values = value.trim().strip_prefix('[')?.strip_suffix(']')?;
+    let weights = values
+        .split(',')
+        .map(|value| value.trim().parse::<u32>().ok().filter(|value| *value > 0))
+        .collect::<Option<Vec<_>>>()?;
+    (!weights.is_empty()).then_some(weights)
+}
+
+fn finish_presenterm_columns(
+    roots: &mut Vec<DocumentNode>,
+    columns: &mut Option<PresentermColumns>,
+) {
+    let Some(columns) = columns.take() else {
+        return;
+    };
+    let template = columns
+        .weights
+        .iter()
+        .map(|weight| format!("{weight}fr"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let children = columns
+        .nodes
+        .into_iter()
+        .enumerate()
+        .map(|(index, children)| {
+            DocumentNode::Element(ElementNode {
+                kind: ElementKind::AllowedHtml,
+                tag: "div".into(),
+                attributes: BTreeMap::from([(
+                    "class".into(),
+                    format!("presenterm-column presenterm-column-{index}"),
+                )]),
+                children,
+            })
+        })
+        .collect();
+    roots.push(DocumentNode::Element(ElementNode {
+        kind: ElementKind::AllowedHtml,
+        tag: "div".into(),
+        attributes: BTreeMap::from([
+            ("class".into(), "presenterm-columns".into()),
+            ("style".into(), format!("grid-template-columns:{template}")),
+        ]),
+        children,
+    }));
+}
+
+fn load_presenterm_include(
+    include: &str,
+    context: &TalkParseContext<'_>,
+) -> Result<String, ContentError> {
+    let relative = Path::new(include);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+        || relative
+            .extension()
+            .is_none_or(|extension| extension != "md")
+    {
+        return Err(presenterm_command_error(
+            context,
+            "include requires a normalized relative .md path",
+        ));
+    }
+    let source = context
+        .content_root
+        .join(context.page_path.parent().unwrap_or_else(|| Path::new("")))
+        .join(relative);
+    fs::read_to_string(&source).map_err(|source_error| ContentError::Io {
+        path: source,
+        source: source_error,
+    })
+}
+
+fn mark_presenterm_list_items(nodes: &mut [DocumentNode]) {
+    for node in nodes {
+        let DocumentNode::Element(element) = node else {
+            continue;
+        };
+        if element.tag == "li" {
+            let classes = element.attributes.entry("class".into()).or_default();
+            if !classes.split_whitespace().any(|class| class == "fragment") {
+                if !classes.is_empty() {
+                    classes.push(' ');
+                }
+                classes.push_str("fragment");
+            }
+        }
+        mark_presenterm_list_items(&mut element.children);
+    }
+}
+
+fn normalize_presenterm_media(nodes: &mut [DocumentNode]) {
+    for node in nodes.iter_mut() {
+        let DocumentNode::Element(element) = node else {
+            continue;
+        };
+        normalize_presenterm_media(&mut element.children);
+        if element.tag == "img" {
+            let alt = element.attributes.get("alt").cloned().unwrap_or_default();
+            if let Some(value) = alt.strip_prefix("image:width:") {
+                if let Some(width) = value.split_whitespace().next() {
+                    if valid_presenterm_image_width(width) {
+                        element
+                            .attributes
+                            .insert("style".into(), format!("width:{width}"));
+                        element.attributes.insert("alt".into(), String::new());
+                    }
+                }
+            } else if let Some(value) = alt.strip_prefix("image:w:") {
+                if let Some(width) = value.split_whitespace().next() {
+                    if valid_presenterm_image_width(width) {
+                        element
+                            .attributes
+                            .insert("style".into(), format!("width:{width}"));
+                        element.attributes.insert("alt".into(), String::new());
+                    }
+                }
+            }
+        }
+    }
+    for node in nodes.iter_mut() {
+        let DocumentNode::Element(element) = node else {
+            continue;
+        };
+        if element.tag != "a" {
+            continue;
+        }
+        let Some(href) = element.attributes.get("href").cloned() else {
+            continue;
+        };
+        let path = href.split(['?', '#']).next().unwrap_or(&href);
+        if !matches!(
+            Path::new(path).extension().and_then(|value| value.to_str()),
+            Some("mp4" | "webm" | "ogg")
+        ) {
+            continue;
+        }
+        let caption = document_text(&element.children);
+        let media_type = match Path::new(path).extension().and_then(|value| value.to_str()) {
+            Some("webm") => "video/webm",
+            Some("ogg") => "video/ogg",
+            _ => "video/mp4",
+        };
+        *element = ElementNode {
+            kind: ElementKind::AllowedHtml,
+            tag: "figure".into(),
+            attributes: BTreeMap::from([("class".into(), "mediaframeholder".into())]),
+            children: vec![
+                DocumentNode::Element(ElementNode {
+                    kind: ElementKind::AllowedHtml,
+                    tag: "video".into(),
+                    attributes: BTreeMap::from([
+                        ("aria-label".into(), caption.clone()),
+                        ("class".into(), "faqe-embedded-video".into()),
+                        ("controls".into(), String::new()),
+                        ("playsinline".into(), String::new()),
+                        ("preload".into(), "metadata".into()),
+                    ]),
+                    children: vec![DocumentNode::Element(ElementNode {
+                        kind: ElementKind::AllowedHtml,
+                        tag: "source".into(),
+                        attributes: BTreeMap::from([
+                            ("src".into(), href),
+                            ("type".into(), media_type.into()),
+                        ]),
+                        children: Vec::new(),
+                    })],
+                }),
+                DocumentNode::Element(ElementNode {
+                    kind: ElementKind::Image,
+                    tag: "figcaption".into(),
+                    attributes: BTreeMap::from([("class".into(), "imagetextframe".into())]),
+                    children: vec![DocumentNode::Text { value: caption }],
+                }),
+            ],
+        };
+    }
+}
+
+fn valid_presenterm_image_width(value: &str) -> bool {
+    value
+        .strip_suffix('%')
+        .and_then(|value| value.parse::<u8>().ok())
+        .is_some_and(|value| value > 0 && value <= 100)
+}
+
+fn document_text(nodes: &[DocumentNode]) -> String {
+    nodes
+        .iter()
+        .map(|node| match node {
+            DocumentNode::Text { value } => value.clone(),
+            DocumentNode::Element(element) => document_text(&element.children),
+        })
+        .collect::<Vec<_>>()
+        .join("")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn split_front_matter(source: &str) -> Result<(&str, &str), String> {
@@ -1734,6 +2471,26 @@ fn split_front_matter(source: &str) -> Result<(&str, &str), String> {
         offset += line.len();
     }
     Err("front matter is missing its closing +++ delimiter".into())
+}
+
+fn split_yaml_front_matter(source: &str) -> Result<(&str, &str), String> {
+    let mut offset = 0;
+    let mut lines = source.split_inclusive('\n');
+    let first = lines.next().ok_or("file is empty")?;
+    if first.trim_end_matches(['\r', '\n']) != "---" {
+        return Err("Presenterm files require YAML front matter beginning with ---".into());
+    }
+    offset += first.len();
+    let front_start = offset;
+    for line in lines {
+        if line.trim_end_matches(['\r', '\n']) == "---" {
+            let front_end = offset;
+            offset += line.len();
+            return Ok((&source[front_start..front_end], &source[offset..]));
+        }
+        offset += line.len();
+    }
+    Err("Presenterm front matter is missing its closing --- delimiter".into())
 }
 
 fn toml_diagnostic(source: &str, error: &toml::de::Error) -> String {
@@ -2313,6 +3070,19 @@ fn sanitize_legacy_html(html: &str) -> String {
             "img",
             &["align", "alt", "height", "loading", "src", "width"],
         )
+        .add_tag_attributes("source", &["src", "type"])
+        .add_tag_attributes(
+            "video",
+            &[
+                "controls",
+                "height",
+                "playsinline",
+                "poster",
+                "preload",
+                "src",
+                "width",
+            ],
+        )
         .add_tag_attributes("input", &["checked", "disabled", "name", "type", "value"])
         .add_tag_attributes("label", &["for"])
         .add_tag_attributes("ol", &["reversed", "start", "type"])
@@ -2510,7 +3280,10 @@ fn append_document_node(state: &mut DocumentBuilder, node: DocumentNode) {
 }
 
 fn is_void_element(tag: &str) -> bool {
-    matches!(tag, "br" | "col" | "hr" | "img" | "input" | "wbr")
+    matches!(
+        tag,
+        "br" | "col" | "hr" | "img" | "input" | "source" | "wbr"
+    )
 }
 
 fn classify_element(tag: &str, attributes: &BTreeMap<String, String>) -> ElementKind {
