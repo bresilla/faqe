@@ -1,0 +1,66 @@
+name: release
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - name: Verify release commit
+        run: nix develop --impure -c make verify-all
+
+  release:
+    name: release ${{ matrix.artifact }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: "faqe-linux-amd64"
+          - os: ubuntu-24.04-arm
+            artifact: "faqe-linux-arm64"
+          - os: macos-15-intel
+            artifact: "faqe-macos-amd64"
+          - os: macos-14
+            artifact: "faqe-macos-arm64"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli --version 0.2.114 --locked
+      - name: Install Binaryen (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: Install Binaryen (macOS)
+        if: runner.os == 'macOS'
+        run: brew install binaryen
+      - name: Enforce asset license gate
+        run: |
+          if grep -q 'Release blocker' THIRD_PARTY.md; then
+            echo 'Public release blocked by unresolved embedded-asset rights in THIRD_PARTY.md.' >&2
+            exit 1
+          fi
+      - name: Build package files
+        run: make package-files
+      - name: Package
+        run: |
+          tar -C target/package -czf "${{ matrix.artifact }}.tar.gz" .
+          shasum -a 256 "${{ matrix.artifact }}.tar.gz" > "${{ matrix.artifact }}.tar.gz.sha256"
+          shasum -a 256 -c "${{ matrix.artifact }}.tar.gz.sha256"
+      - name: Upload artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.tar.gz.sha256

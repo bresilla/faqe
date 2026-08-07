@@ -1,0 +1,54 @@
+site_url = "https://bresilla.com"
+author = "Trim Bresilla"
+description = "Personal website & blog"
+keywords = ["blog", "developer", "personal"]
+info = "plant hacker · roboticist · reverse engineer"
+avatar = "home/logo.png"
+avatar_hover = "home/logo.png"
+favicon = "home/favicon.svg"
+default_card_thumbnail = "home/logo.png"
+default_foot = "I solemnly swear that I am up to no good"
+disclaimer_title = "Disclaimer!"
+disclaimer_paragraphs = [
+  "The intention of this blog is to entertain anyone who might read it and also to provide some sort of encouragement for the author. The opinions it contains are exactly that: OPINIONS, which are mine and mine alone (and of some people that i copied from).",
+  "As per usual, a lot of text is copied and pasted from other resources, combined here in a hot mess of everything, however EVERYTHING is properly cited at the end. I use this as \"notes\" going through the learning process. All the credit goes to the people that made those resources avalible for free for me to copy from them 😛.",
+]
+references_copyright = "© bresilla (this year 😛). All rights reserved."
+references_notice = "Just kidding bro. Apart from the logo, nothing is reserved. Any part of this blog may be reproduced, stored in or introduced into a retrieval system, or transmitted, in any form, or by any means (electronic, mechanical, photocopying, recording or otherwise) without the prior written permission of the author, including for the “fair use” purposes of criticism, comment, news reporting, teaching, scholarship, or research. Any person who does any unauthorised act in relation to this blog it's not gonna be prosecuted at all. Its my great pleasure actually if you find it helpful in any way or form. Copy and do whatever you want, cos this is how we spread knowledge, not by copyrighting everything. However, plese double-check the resources above before you so such an amazing crime."
+
+[[socials]]
+name = "Github"
+glyph = ""
+url = "https://github.com/bresilla/"
+weight = 1
+
+[[socials]]
+name = "LinkedIn"
+glyph = ""
+url = "https://www.linkedin.com/in/bresilla/"
+weight = 3
+
+[[socials]]
+name = "Twitter"
+glyph = ""
+url = "https://twitter.com/trimbresilla/"
+weight = 4
+
+[[socials]]
+name = "Youtube"
+glyph = ""
+url = "https://www.youtube.com/channel/UCgx55pjpHgsHwIxexiunA5w"
+weight = 5
+
+[[socials]]
+name = "Reddit"
+glyph = ""
+url = "https://www.reddit.com/user/bresilla"
+weight = 6
+
+[default_style]
+accent = "#00e5ff"
+chromatic = ["#00e5ff", "#ff2bd6"]
+theme = "dark"
+background = "#18191c"
+foreground = "#f3f3f3"
