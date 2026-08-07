@@ -727,7 +727,7 @@ fn standard_shell(props: &ShellProps) -> Html {
             <nav class="navigation" aria-label="Primary navigation" style={format!("background-color:{chrome};box-shadow:inset 0 -8px 16px 0 {shadow}")}>
                 <section class="container">
                     <span class="title"><a class="navigation-title" href={site_url("/")} aria-current={(active_route == "/").then_some("page")}>
-                        <ScrambleTitle text={props.bundle.site.title.clone()} />
+                        <ScrambleTitle text={props.bundle.site.title.clone()} profile={GlitchProfile::Navigation} />
                     </a></span>
                     <button ref={menu_button} class="menu-button float-right" aria-label="Toggle navigation" aria-controls="primary-navigation" aria-expanded={open.to_string()} onclick={toggle}>{icon_view("menu")}</button>
                     <ul id="primary-navigation" class={classes!("navigation-list", open.then_some("is-open"))}>
@@ -826,7 +826,7 @@ fn home_page(props: &BundleProps) -> Html {
                         })}
                     </div>
                     {if let Some(latest) = props.bundle.latest_post() {
-                        html! { <div class="latest"><a href={site_url(&latest.route)}><div class="latestchild"><div class="latesttag"><span>{"LATEST POST: "}</span><ScrambleTitle text={latest.title.clone()} profile={GlitchProfile::PostTitle} /></div></div></a></div> }
+                        html! { <div class="latest"><a href={site_url(&latest.route)}><div class="latestchild"><div class="latesttag"><ScrambleTitle text={format!("LATEST POST: {}", latest.title)} profile={GlitchProfile::PostTitle} /></div></div></a></div> }
                     } else { Html::default() }}
                 </div>
             </div></section></section>
@@ -1068,8 +1068,8 @@ fn prefers_reduced_motion() -> bool {
 }
 
 const SCRAMBLE_GLYPHS: [char; 32] = [
-    '!', '<', '>', '-', '_', '/', '[', ']', '{', '}', '=', '+', '*', '^', '?', '#', 'ア', 'イ',
-    'ウ', 'エ', 'オ', 'カ', 'キ', 'ク', 'シ', 'ス', 'タ', 'ツ', 'ナ', 'メ', 'ラ', 'リ',
+    '!', '<', '>', '-', '_', '/', '[', ']', '{', '}', '=', '+', '*', '^', '?', '#', 'ｱ', 'ｲ', 'ｳ',
+    'ｴ', 'ｵ', 'ｶ', 'ｷ', 'ｸ', 'ｼ', 'ｽ', 'ﾀ', 'ﾂ', 'ﾅ', 'ﾒ', 'ﾗ', 'ﾘ',
 ];
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1083,6 +1083,7 @@ enum ScramblePhase {
 enum GlitchProfile {
     #[default]
     Title,
+    Navigation,
     Brand,
     PostTitle,
     Subtitle,
@@ -1147,6 +1148,7 @@ fn scramble_title(props: &ScrambleTitleProps) -> Html {
                     ScramblePhase::Glitching { cycle, frame } => {
                         let last_frame = match profile {
                             GlitchProfile::Brand
+                            | GlitchProfile::Navigation
                             | GlitchProfile::Title
                             | GlitchProfile::PostTitle => 1,
                             GlitchProfile::Subtitle => 1,
@@ -1178,18 +1180,23 @@ fn scramble_title(props: &ScrambleTitleProps) -> Html {
     };
     html! {
         <span class={classes!("faqe-scramble", state_class, (props.profile == GlitchProfile::Subtitle).then_some("is-subtitle"))} aria-label={props.text.clone()}>
-            <span class="faqe-scramble-channel faqe-scramble-channel-a" aria-hidden="true">{scramble_text_view(&display)}</span>
-            <span class="faqe-scramble-label" aria-hidden="true">{scramble_text_view(&display)}</span>
-            <span class="faqe-scramble-channel faqe-scramble-channel-b" aria-hidden="true">{scramble_text_view(&display)}</span>
+            <span class="faqe-scramble-channel faqe-scramble-channel-a" aria-hidden="true">{scramble_text_view(&display, &props.text)}</span>
+            <span class="faqe-scramble-label" aria-hidden="true">{scramble_text_view(&display, &props.text)}</span>
+            <span class="faqe-scramble-channel faqe-scramble-channel-b" aria-hidden="true">{scramble_text_view(&display, &props.text)}</span>
         </span>
     }
 }
 
-fn scramble_text_view(text: &str) -> Html {
+fn scramble_text_view(text: &str, original: &str) -> Html {
+    let original = original.chars().collect::<Vec<_>>();
     html! {
-        <>{for text.chars().map(|character| {
-            if matches!(character, '\u{30a0}'..='\u{30ff}' | '\u{31f0}'..='\u{31ff}') {
-                html! { <span class="faqe-scramble-kana">{character}</span> }
+        <>{for text.chars().enumerate().map(|(index, character)| {
+            if original.get(index).is_some_and(|value| *value != character) {
+                let kana = matches!(
+                    character,
+                    '\u{30a0}'..='\u{30ff}' | '\u{31f0}'..='\u{31ff}' | '\u{ff65}'..='\u{ff9f}'
+                );
+                html! { <span class={classes!("faqe-scramble-symbol", kana.then_some("faqe-scramble-kana"))}>{character}</span> }
             } else {
                 Html::from(character.to_string())
             }
@@ -1205,6 +1212,7 @@ fn scramble_decode_frames(text: &str, profile: GlitchProfile) -> u16 {
         .min(u16::MAX as usize) as u16;
     match profile {
         GlitchProfile::Brand => 7_u16.saturating_add(characters),
+        GlitchProfile::Navigation => 6_u16.saturating_add(characters),
         GlitchProfile::Title => 6_u16.saturating_add(characters),
         GlitchProfile::PostTitle => 14,
         GlitchProfile::Subtitle => 0,
@@ -1214,6 +1222,7 @@ fn scramble_decode_frames(text: &str, profile: GlitchProfile) -> u16 {
 fn scramble_frame_delay(profile: GlitchProfile) -> u32 {
     match profile {
         GlitchProfile::Brand => 70,
+        GlitchProfile::Navigation => 55,
         GlitchProfile::Title => 55,
         GlitchProfile::PostTitle => 48,
         GlitchProfile::Subtitle => 60,
@@ -1237,6 +1246,7 @@ fn scramble_decoding_text(text: &str, frame: u16, profile: GlitchProfile) -> Str
     if profile != GlitchProfile::Subtitle {
         let warmup = match profile {
             GlitchProfile::Brand => 7,
+            GlitchProfile::Navigation => 6,
             GlitchProfile::Title => 6,
             GlitchProfile::PostTitle => 3,
             GlitchProfile::Subtitle => unreachable!(),
@@ -1286,7 +1296,11 @@ fn scramble_glitched_text(text: &str, cycle: u16, frame: u8, profile: GlitchProf
         return text.to_owned();
     }
     let seed = scramble_hash(text).wrapping_add(cycle as u64 * 0x9e37_79b9);
-    let count = (1 + seed as usize % 3).min(positions.len());
+    let count = match profile {
+        GlitchProfile::Navigation => 1,
+        _ => 1 + seed as usize % 3,
+    }
+    .min(positions.len());
     let start = seed as usize % positions.len();
     let step = ((seed >> 17) as usize % positions.len()).max(1);
     let mut glitched = Vec::with_capacity(count);
@@ -1312,9 +1326,10 @@ fn scramble_glitched_text(text: &str, cycle: u16, frame: u8, profile: GlitchProf
         .map(|(index, character)| {
             if glitched.contains(&index) {
                 match profile {
-                    GlitchProfile::Brand | GlitchProfile::Title | GlitchProfile::PostTitle => {
-                        scramble_glyph(seed, index, frame as usize)
-                    }
+                    GlitchProfile::Brand
+                    | GlitchProfile::Navigation
+                    | GlitchProfile::Title
+                    | GlitchProfile::PostTitle => scramble_glyph(seed, index, frame as usize),
                     GlitchProfile::Subtitle => {
                         shuffled_letter(seed, index, frame as usize, character)
                     }
@@ -1330,6 +1345,7 @@ fn scramble_glitch_delay(text: &str, cycle: u16, profile: GlitchProfile) -> u32 
     let entropy = scramble_hash(text).wrapping_add(cycle as u64 * 2_654_435_761) as u32;
     match profile {
         GlitchProfile::Brand => 1_800 + entropy % 1_801,
+        GlitchProfile::Navigation => 6_500 + entropy % 5_501,
         GlitchProfile::Title => 1_500 + entropy % 1_801,
         GlitchProfile::PostTitle => 1_700 + entropy % 2_001,
         GlitchProfile::Subtitle => 10_000 + entropy % 10_001,
