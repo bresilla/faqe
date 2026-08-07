@@ -258,7 +258,7 @@ fn app() -> Html {
         if page.kind == PageKind::Talk {
             let exit_route = talk_exit_route(bundle, &page);
             mark_ready();
-            html! { <TalkPage page={page} {exit_route} /> }
+            html! { <TalkPage page={page} {exit_route} author={bundle.site.author.clone()} /> }
         } else {
             mark_ready();
             html! {
@@ -308,9 +308,31 @@ fn talk_exit_route(bundle: &SiteBundle, talk: &Page) -> String {
                 && page.route != talk.route
                 && talk.route.starts_with(&page.route)
         })
-        .max_by_key(|page| page.route.len())
+        .min_by_key(|page| page.route.len())
         .map(|page| page.route.clone())
         .unwrap_or_else(|| "/".into())
+}
+
+fn exit_talk(exit_href: &str) {
+    gloo_utils::document().exit_fullscreen();
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let referrer = gloo_utils::document().referrer();
+    let origin = window.location().origin().unwrap_or_default();
+    let has_same_origin_referrer = referrer
+        .strip_prefix(&origin)
+        .is_some_and(|path| path.starts_with('/'));
+    let history = window.history().ok();
+    let can_go_back = has_same_origin_referrer
+        && history
+            .as_ref()
+            .and_then(|history| history.length().ok())
+            .is_some_and(|length| length > 1);
+    if can_go_back && history.is_some_and(|history| history.back().is_ok()) {
+        return;
+    }
+    let _ = window.location().set_href(exit_href);
 }
 
 fn is_page_href(href: &str) -> bool {
@@ -2340,6 +2362,7 @@ fn speaker_notes(slide: &TalkSlide) -> Document {
 struct TalkPageProps {
     page: Page,
     exit_route: String,
+    author: String,
 }
 
 #[function_component(TalkPage)]
@@ -2367,6 +2390,13 @@ fn talk_page(props: &TalkPageProps) -> Html {
     let presenter_open = use_state(|| false);
     let fullscreen = use_state(|| false);
     let exit_href = site_url(&props.exit_route);
+    let exit_click = {
+        let exit_href = exit_href.clone();
+        Callback::from(move |event: MouseEvent| {
+            event.prevent_default();
+            exit_talk(&exit_href);
+        })
+    };
 
     {
         let deck_state = deck_state.clone();
@@ -2481,10 +2511,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
                                 TalkAction::Help => help_open.set(!*help_open),
                                 TalkAction::Presenter => presenter_open.set(!*presenter_open),
                                 TalkAction::Escape => {
-                                    gloo_utils::document().exit_fullscreen();
-                                    if let Some(window) = web_sys::window() {
-                                        let _ = window.location().set_href(&exit_href);
-                                    }
+                                    exit_talk(&exit_href);
                                 }
                                 TalkAction::Fullscreen => toggle_fullscreen(&talk_root),
                             }
@@ -2615,8 +2642,6 @@ fn talk_page(props: &TalkPageProps) -> Html {
     let at_last = current.0 + 1 == group_lengths.len()
         && current.1 + 1 == group_lengths.get(current.0).copied().unwrap_or(1)
         && deck_state.fragment == active_fragment_count;
-    let can_move_up = current.1 > 0;
-    let can_move_down = current.1 + 1 < group_lengths.get(current.0).copied().unwrap_or(1);
     let select_slide = {
         let deck_state = deck_state.clone();
         let group_lengths = group_lengths.clone();
@@ -2722,7 +2747,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
             <h1 class="faqe-visually-hidden">{&props.page.title}</h1>
             <div class="line top"></div><div class="line bottom"></div><div class="line left"></div><div class="line right"></div>
             <div class="faqe-talk-canvas-meta" aria-hidden="true">
-                <span>{"FAQE / PRESENT"}</span>
+                <span>{&props.author}</span>
                 <span class="faqe-talk-canvas-count">{format!("{slide_number:02} / {slide_total:02}")}</span>
             </div>
             <div class="faqe-slide-background" style={background_style} aria-hidden="true"></div>
@@ -2730,10 +2755,9 @@ fn talk_page(props: &TalkPageProps) -> Html {
                 {if deck.slides.is_empty() { html! { <section class="present"><p>{"This presentation has no slides."}</p></section> } } else { html! { {for talk_sections(&deck.slides, current, deck_state.fragment, &props.page.style)} } }}
             </div>
             <nav class="controls" aria-label="Presentation controls" data-controls-layout="bottom-right" data-controls-back-arrows="faded">
-                <a class="navigate-left faqe-talk-exit" aria-label="Exit presentation" href={site_url(&props.exit_route)}><span class="controls-arrow"></span></a>
-                <button class="navigate-right" aria-label="Next slide" disabled={at_last} onclick={move_callback(TalkMove::Right)}><span class="controls-arrow"></span></button>
-                <button class="navigate-up" aria-label="Previous vertical slide" disabled={!can_move_up} onclick={move_callback(TalkMove::Up)}><span class="controls-arrow"></span></button>
-                <button class="navigate-down" aria-label="Next vertical slide" disabled={!can_move_down} onclick={move_callback(TalkMove::Down)}><span class="controls-arrow"></span></button>
+                <button class="navigate-previous" aria-label="Previous slide" disabled={completed <= 1} onclick={move_callback(TalkMove::Previous)}>{"<"}</button>
+                <button class="navigate-next" aria-label="Next slide" disabled={at_last} onclick={move_callback(TalkMove::Next)}>{">"}</button>
+                <a class="faqe-talk-exit" aria-label="Exit presentation" href={site_url(&props.exit_route)} onclick={exit_click}>{"EXIT"}</a>
             </nav>
             <nav class="faqe-talk-utility" aria-label="Presentation utilities">
                 <button type="button" aria-label="Toggle slide overview" aria-pressed={overview.to_string()} onclick={toggle_overview}>{"O"}</button>
