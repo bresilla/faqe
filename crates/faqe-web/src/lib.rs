@@ -2039,7 +2039,7 @@ impl Default for DeckConfig {
         Self {
             width: 960.0,
             height: 700.0,
-            margin: 0.04,
+            margin: 0.10,
             min_scale: 0.2,
             max_scale: 1.5,
         }
@@ -2610,6 +2610,8 @@ fn talk_page(props: &TalkPageProps) -> Html {
     let background = active_slide.map(slide_background).unwrap_or_default();
     let background_style = slide_background_style(&background);
     let active_fragment_count = active_slide.map(talk_fragment_count).unwrap_or(0);
+    let slide_number = talk_slide_index(current, &group_lengths).unwrap_or(0) + 1;
+    let slide_total = deck.slides.len();
     let at_last = current.0 + 1 == group_lengths.len()
         && current.1 + 1 == group_lengths.get(current.0).copied().unwrap_or(1)
         && deck_state.fragment == active_fragment_count;
@@ -2719,6 +2721,10 @@ fn talk_page(props: &TalkPageProps) -> Html {
             <style>{ACCESSIBILITY_CSS}</style>
             <h1 class="faqe-visually-hidden">{&props.page.title}</h1>
             <div class="line top"></div><div class="line bottom"></div><div class="line left"></div><div class="line right"></div>
+            <div class="faqe-talk-canvas-meta" aria-hidden="true">
+                <span>{"FAQE / PRESENT"}</span>
+                <span class="faqe-talk-canvas-count">{format!("{slide_number:02} / {slide_total:02}")}</span>
+            </div>
             <div class="faqe-slide-background" style={background_style} aria-hidden="true"></div>
             <div class="slides" style={slides_style} aria-hidden={paused.to_string()}>
                 {if deck.slides.is_empty() { html! { <section class="present"><p>{"This presentation has no slides."}</p></section> } } else { html! { {for talk_sections(&deck.slides, current, deck_state.fragment, &props.page.style)} } }}
