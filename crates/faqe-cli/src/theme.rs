@@ -62,6 +62,7 @@ html:has(.wrapper.home),body:has(.wrapper.home),#faqe:has(.wrapper.home){height:
 .wrapper.home .latest{margin-bottom:clamp(.7rem,1.2dvh,1.3rem)}.wrapper.home .latest>a{min-width:0;width:min(82vw,62rem)}.wrapper.home .latestchild{transition:background-color .16s steps(2),border-color .16s steps(2),box-shadow .16s steps(2),color .16s steps(2),transform .16s steps(2)}.wrapper.home .latestchild:hover,.wrapper.home .latest>a:focus-visible .latestchild{background:var(--interactive-color);border-color:var(--interactive-color);color:var(--bg-color)}.wrapper.home .latest>a:focus-visible{outline:none}
 .faqe-scramble.is-subtitle,.faqe-scramble.is-subtitle.is-glitching{animation:none;filter:none;transform:none}.faqe-scramble.is-subtitle .faqe-scramble-label{text-shadow:none}.faqe-scramble.is-subtitle .faqe-scramble-channel{display:none!important}
 @media(prefers-reduced-motion:reduce){.faqe-scramble-channel{opacity:.16!important;transform:none!important}.faqe-scramble.is-subtitle .faqe-scramble-channel{opacity:.06!important}}
+.navigation::after,.footer::before{animation:none!important;transform:none!important}
 "#;
 
 /// Motion rules are generated from the reviewed legacy keyframe tables. Keeping

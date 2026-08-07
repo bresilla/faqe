@@ -48,10 +48,16 @@ limits of VPN-visible preview serving.
 Development and validation use the repository Makefile:
 
 ```sh
+git submodule update --init --recursive
 make build
 make run
+make content-check
 make verify
 make verify-all
 make release-build
 make package
 ```
+
+The `content/` test fixture is the `bresilla/website` repository, tracked as a
+submodule. `make content-check` validates it with the locally built generator,
+and `make verify` includes that validation.
