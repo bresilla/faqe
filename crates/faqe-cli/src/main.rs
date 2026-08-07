@@ -27,9 +27,6 @@ const WEB_JS: &str = include_str!(concat!(env!("FAQE_EMBED_DIR"), "/faqe_web.js"
 const WEB_WASM: &[u8] = include_bytes!(concat!(env!("FAQE_EMBED_DIR"), "/faqe_web_bg.wasm"));
 const PROJECT_LICENSE: &str = include_str!(concat!(env!("FAQE_EMBED_DIR"), "/LICENSE"));
 const THIRD_PARTY: &str = include_str!(concat!(env!("FAQE_EMBED_DIR"), "/THIRD_PARTY.md"));
-const IOSEVKA_TERM_SS01: &[u8] = include_bytes!("../assets/fonts/iosevka-term-ss01-light.ttf");
-const GOHUFONT_UNI_14: &[u8] = include_bytes!("../assets/fonts/gohufont-uni-14.ttf");
-const DOTGOTHIC16_REGULAR: &[u8] = include_bytes!("../assets/fonts/dotgothic16-regular.ttf");
 static THIRD_PARTY_LICENSES: Dir<'_> = include_dir!("$FAQE_EMBED_DIR/licenses");
 
 include!(concat!(env!("OUT_DIR"), "/embedded_manifest.rs"));
@@ -118,6 +115,17 @@ fn run(arguments: Vec<String>) -> Result<(), Error> {
             println!("{THIRD_PARTY}");
             Ok(())
         }
+        "themes" => {
+            for id in theme::available() {
+                let default = if id == faqe_model::DEFAULT_THEME_ID {
+                    "\tdefault"
+                } else {
+                    ""
+                };
+                println!("{id}{default}");
+            }
+            Ok(())
+        }
         "help" | "--help" | "-h" => {
             println!("{}", usage());
             Ok(())
@@ -127,7 +135,7 @@ fn run(arguments: Vec<String>) -> Result<(), Error> {
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  faqe build [CONTENT_DIR] [--output DIR] [--base-url PATH]\n  faqe check [CONTENT_DIR]\n  faqe serve [CONTENT_DIR] [--bind IP:PORT] [--no-watch]\n  faqe assets\n  faqe licenses"
+    "Usage:\n  faqe build [CONTENT_DIR] [--output DIR] [--base-url PATH]\n  faqe check [CONTENT_DIR]\n  faqe serve [CONTENT_DIR] [--bind IP:PORT] [--no-watch]\n  faqe assets\n  faqe licenses\n  faqe themes"
 }
 
 #[derive(Clone, Debug)]
@@ -275,11 +283,13 @@ fn build_site(options: &BuildOptions) -> Result<BuildReport, Error> {
     }
     fs::create_dir_all(&temporary).map_err(|source| io_error(&temporary, source))?;
 
-    let result = write_site(&temporary, &loaded, &options.base_url, &public_files);
-    if let Err(error) = result {
-        let _ = fs::remove_dir_all(&temporary);
-        return Err(error);
-    }
+    let generated_assets = match write_site(&temporary, &loaded, &options.base_url, &public_files) {
+        Ok(count) => count,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&temporary);
+            return Err(error);
+        }
+    };
 
     // The output path may have changed while the site was being rendered. Do
     // not let a newly-created symlink ancestor redirect the final rename.
@@ -292,7 +302,7 @@ fn build_site(options: &BuildOptions) -> Result<BuildReport, Error> {
     Ok(BuildReport {
         pages: loaded.markdown_files,
         routes: route_count(&loaded.bundle),
-        assets: 8 + loaded.assets.len() + public_files.len(),
+        assets: generated_assets + loaded.assets.len() + public_files.len(),
         source_bytes: loaded.source_bytes,
         output_bytes,
         warnings: loaded.warnings,
@@ -967,9 +977,16 @@ fn write_site(
     loaded: &LoadReport,
     base_url: &str,
     public_files: &[PublicFile],
-) -> Result<(), Error> {
+) -> Result<usize, Error> {
     let site_json = serde_json::to_vec(&loaded.bundle).map_err(Error::Serialization)?;
-    let assets = AssetNames::new(&site_json);
+    let selected_theme = theme::resolve(&loaded.bundle.site.theme).ok_or_else(|| {
+        Error::Validation(format!(
+            "theme {:?} is not compiled into this faqe binary; available themes: {}",
+            loaded.bundle.site.theme,
+            theme::available().collect::<Vec<_>>().join(", ")
+        ))
+    })?;
+    let assets = AssetNames::new(&site_json, selected_theme)?;
     write_file(output.join(&assets.js), WEB_JS.as_bytes())?;
     write_file(output.join(&assets.wasm), WEB_WASM)?;
     write_file(
@@ -977,9 +994,9 @@ fn write_site(
         assets.bootstrap_source.as_bytes(),
     )?;
     write_file(output.join(&assets.css), assets.css_source.as_bytes())?;
-    write_file(output.join(&assets.iosevka_font), IOSEVKA_TERM_SS01)?;
-    write_file(output.join(&assets.theme_font), GOHUFONT_UNI_14)?;
-    write_file(output.join(&assets.japanese_font), DOTGOTHIC16_REGULAR)?;
+    for asset in &assets.theme_assets {
+        write_file(output.join(&asset.output_path), asset.source.bytes)?;
+    }
     write_file(
         output.join(&assets.resume_css),
         assets.resume_css_source.as_bytes(),
@@ -1054,7 +1071,7 @@ fn write_site(
     validate_generated_references(output, base_url)?;
     let manifest = build_manifest(output, loaded, &site_json, &assets, public_files)?;
     write_file(output.join("build-manifest.json"), manifest.as_bytes())?;
-    Ok(())
+    Ok(assets.generated_asset_count())
 }
 
 fn write_alias_redirect(
@@ -1086,9 +1103,8 @@ struct AssetNames {
     bootstrap_source: String,
     css: String,
     css_source: String,
-    iosevka_font: String,
-    theme_font: String,
-    japanese_font: String,
+    theme_id: &'static str,
+    theme_assets: Vec<ThemeAssetName>,
     resume_css: String,
     resume_css_source: String,
     slide_css: String,
@@ -1096,8 +1112,14 @@ struct AssetNames {
     site_json: String,
 }
 
+#[derive(Debug)]
+struct ThemeAssetName {
+    output_path: String,
+    source: theme::Asset,
+}
+
 impl AssetNames {
-    fn new(site_json: &[u8]) -> Self {
+    fn new(site_json: &[u8], selected_theme: &'static theme::Definition) -> Result<Self, Error> {
         let js = asset_name("faqe", "js", WEB_JS.as_bytes());
         let wasm = asset_name("faqe-bg", "wasm", WEB_WASM);
         let js_file = Path::new(&js).file_name().unwrap().to_string_lossy();
@@ -1109,44 +1131,87 @@ function failed(error){{console.error('faqe startup failed',error);if(!status)re
 async function start(){{loading();const retry=attempt++===0?'':`?faqe-retry=${{attempt}}`;const moduleUrl=new URL('./{js_file}',import.meta.url);const wasmUrl=new URL('./{wasm_file}',import.meta.url);moduleUrl.search=retry;wasmUrl.search=retry;try{{const module=await import(moduleUrl.href);await module.default(wasmUrl);status?.remove();}}catch(error){{failed(error);}}}}
 void start();"#
         );
-        let iosevka_font = asset_name("iosevka-term-ss01-light", "ttf", IOSEVKA_TERM_SS01);
-        let iosevka_file = Path::new(&iosevka_font)
-            .file_name()
-            .unwrap()
-            .to_string_lossy();
-        let theme_font = asset_name("gohufont-uni-14", "ttf", GOHUFONT_UNI_14);
-        let theme_file = Path::new(&theme_font)
-            .file_name()
-            .unwrap()
-            .to_string_lossy();
-        let japanese_font = asset_name("dotgothic16-regular", "ttf", DOTGOTHIC16_REGULAR);
-        let japanese_file = Path::new(&japanese_font)
-            .file_name()
-            .unwrap()
-            .to_string_lossy();
+        let mut asset_paths = BTreeMap::new();
+        let mut theme_assets = Vec::with_capacity(selected_theme.assets.len());
+        for source in selected_theme.assets {
+            let output_path = asset_name(source.stem, source.extension, source.bytes);
+            let file_name = Path::new(&output_path)
+                .file_name()
+                .expect("generated asset path has a file name")
+                .to_string_lossy()
+                .into_owned();
+            if asset_paths.insert(source.id.into(), file_name).is_some() {
+                return Err(Error::Validation(format!(
+                    "theme {:?} defines asset {:?} more than once",
+                    selected_theme.id, source.id
+                )));
+            }
+            theme_assets.push(ThemeAssetName {
+                output_path,
+                source: *source,
+            });
+        }
+        let mut font_faces = String::new();
+        for font in selected_theme.fonts {
+            let source = asset_paths.get(font.asset_id).ok_or_else(|| {
+                Error::Validation(format!(
+                    "theme {:?} font {:?} references unknown asset {:?}",
+                    selected_theme.id, font.family, font.asset_id
+                ))
+            })?;
+            let unicode_range = font
+                .unicode_range
+                .map(|range| format!("unicode-range:{range};"))
+                .unwrap_or_default();
+            let _ = write!(
+                font_faces,
+                "@font-face{{font-family:'{}';src:url('./{}');font-style:{};font-weight:{};font-display:{};{unicode_range}}}",
+                font.family, source, font.style, font.weight, font.display
+            );
+        }
+        let render = |source: &str| {
+            theme::render_stylesheet(source, &asset_paths).map_err(|message| {
+                Error::Validation(format!("theme {:?}: {message}", selected_theme.id))
+            })
+        };
         let css_source = format!(
-            "@font-face{{font-family:'Iosevka Term SS01';src:url('./{iosevka_file}') format('truetype');font-style:normal;font-weight:200;font-display:swap}}@font-face{{font-family:'GohuFont uni14 Nerd Font Mono';src:url('./{theme_file}') format('truetype');font-style:normal;font-weight:400;font-display:swap}}@font-face{{font-family:'DotGothic16';src:url('./{japanese_file}') format('truetype');font-style:normal;font-weight:400;font-display:swap;unicode-range:U+3000-30FF,U+31F0-31FF,U+FF65-FF9F}}{}{}",
-            theme::BASE,
-            theme::motion_css()
+            "{font_faces}{}{}",
+            render(selected_theme.styles.base)?,
+            render(&(selected_theme.styles.motion)())?
         );
-        let resume_css_source = theme::RESUME.to_owned();
-        let slide_css_source = theme::TALK.to_owned();
-        Self {
+        let resume_css_source = render(selected_theme.styles.resume)?;
+        let slide_css_source = render(selected_theme.styles.talk)?;
+        Ok(Self {
             js,
             wasm,
             bootstrap: asset_name("bootstrap", "js", bootstrap_source.as_bytes()),
             bootstrap_source,
-            css: asset_name("faqe", "css", css_source.as_bytes()),
+            css: asset_name(
+                &format!("theme-{}", selected_theme.id),
+                "css",
+                css_source.as_bytes(),
+            ),
             css_source,
-            iosevka_font,
-            theme_font,
-            japanese_font,
-            resume_css: asset_name("resume", "css", resume_css_source.as_bytes()),
+            theme_id: selected_theme.id,
+            theme_assets,
+            resume_css: asset_name(
+                &format!("theme-{}-resume", selected_theme.id),
+                "css",
+                resume_css_source.as_bytes(),
+            ),
             resume_css_source,
-            slide_css: asset_name("slides", "css", slide_css_source.as_bytes()),
+            slide_css: asset_name(
+                &format!("theme-{}-talk", selected_theme.id),
+                "css",
+                slide_css_source.as_bytes(),
+            ),
             slide_css_source,
             site_json: asset_name("site", "json", site_json),
-        }
+        })
+    }
+
+    fn generated_asset_count(&self) -> usize {
+        7 + self.theme_assets.len()
     }
 }
 
@@ -1193,10 +1258,10 @@ fn shell_html(
         .map(|page| &page.style)
         .unwrap_or(&bundle.site.default_style);
     let palette = accessible_palette(style).expect("validated page styles have accessible colors");
-    let (chrome, chrome_shadow) = if style.theme == Theme::Light {
-        ("#e5e8e8", "#11121628")
+    let scheme = if style.theme == Theme::Light {
+        "light"
     } else {
-        ("#131417", "#00000048")
+        "dark"
     };
     let root = base_url.trim_end_matches('/');
     let social_image = page
@@ -1238,8 +1303,7 @@ fn shell_html(
         format!("<meta property=\"og:url\" content=\"{}\"><link rel=\"canonical\" href=\"{}\">{image}", escape_attribute(canonical), escape_attribute(canonical))
     });
     let keywords = bundle.site.keywords.join(", ");
-    let mut extra_css =
-        format!("<style>:root{{--chrome-color:{chrome};--chrome-shadow:{chrome_shadow}}}</style>");
+    let mut extra_css = String::new();
     if page.is_some_and(|page| page.kind == PageKind::Resume) {
         extra_css.push_str(&format!(
             "<link data-faqe-mode=\"resume\" rel=\"stylesheet\" href=\"{root}/{}\">",
@@ -1255,17 +1319,20 @@ fn shell_html(
     let fallback_title = page.map_or(bundle.site.title.as_str(), |page| page.title.as_str());
     let fallback = fallback_html(page, bundle, base_url, fallback_title, description);
     format!(
-        "<!doctype html><html lang=\"en\" style=\"--accent-color:{};--chromatic-a:{};--chromatic-b:{};--bg-color:{};--fg-color:{};--interactive-color:{};--accent-text-color:{}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'\"><meta name=\"faqe-base\" content=\"{}\"><meta name=\"faqe-site-url\" content=\"{}\"><meta name=\"faqe-bundle\" content=\"{}\"><meta name=\"author\" content=\"{}\"><meta name=\"description\" content=\"{}\"><meta name=\"keywords\" content=\"{}\"><meta name=\"theme-color\" content=\"{}\"><meta property=\"og:title\" content=\"{}\"><meta property=\"og:description\" content=\"{}\"><meta property=\"og:type\" content=\"{og_type}\">{article_metadata}<meta name=\"twitter:card\" content=\"summary_large_image\"><meta name=\"twitter:title\" content=\"{}\"><meta name=\"twitter:description\" content=\"{}\">{public_metadata}<title>{}</title><link rel=\"alternate\" type=\"application/rss+xml\" title=\"{}\" href=\"{root}/index.xml\"><link rel=\"icon\" href=\"{root}{}\"><link rel=\"stylesheet\" href=\"{root}/{}\">{extra_css}</head><body><div id=\"faqe-bootstrap-status\" class=\"faqe-bootstrap-status\" hidden role=\"status\" aria-live=\"polite\"></div><div id=\"faqe\">{fallback}</div><script type=\"module\" src=\"{root}/{}\"></script></body></html>",
+        "<!doctype html><html lang=\"en\" data-faqe-theme=\"{}\" data-faqe-scheme=\"{scheme}\" style=\"--accent-color:{};--chromatic-a:{};--chromatic-b:{};--bg-color:{};--fg-color:{};--glitch-color:{};--interactive-color:{};--accent-text-color:{}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'\"><meta name=\"faqe-base\" content=\"{}\"><meta name=\"faqe-site-url\" content=\"{}\"><meta name=\"faqe-bundle\" content=\"{}\"><meta name=\"faqe-theme\" content=\"{}\"><meta name=\"author\" content=\"{}\"><meta name=\"description\" content=\"{}\"><meta name=\"keywords\" content=\"{}\"><meta name=\"theme-color\" content=\"{}\"><meta property=\"og:title\" content=\"{}\"><meta property=\"og:description\" content=\"{}\"><meta property=\"og:type\" content=\"{og_type}\">{article_metadata}<meta name=\"twitter:card\" content=\"summary_large_image\"><meta name=\"twitter:title\" content=\"{}\"><meta name=\"twitter:description\" content=\"{}\">{public_metadata}<title>{}</title><link rel=\"alternate\" type=\"application/rss+xml\" title=\"{}\" href=\"{root}/index.xml\"><link rel=\"icon\" href=\"{root}{}\"><link rel=\"stylesheet\" href=\"{root}/{}\">{extra_css}</head><body><div id=\"faqe-bootstrap-status\" class=\"faqe-bootstrap-status\" hidden role=\"status\" aria-live=\"polite\"></div><div id=\"faqe\">{fallback}</div><script type=\"module\" src=\"{root}/{}\"></script></body></html>",
+        escape_attribute(&bundle.site.theme),
         escape_attribute(&style.accent),
         escape_attribute(&style.chromatic[0]),
         escape_attribute(&style.chromatic[1]),
         escape_attribute(&style.background),
+        escape_attribute(&style.foreground),
         escape_attribute(&style.foreground),
         escape_attribute(&palette.interactive),
         escape_attribute(&palette.accent_text),
         escape_attribute(base_url),
         escape_attribute(&bundle.site.site_url),
         escape_attribute(&assets.site_json),
+        escape_attribute(&bundle.site.theme),
         escape_attribute(&bundle.site.author),
         escape_attribute(description),
         escape_attribute(&keywords),
@@ -1775,21 +1842,15 @@ fn build_manifest(
         (names.js.clone(), "embedded:faqe_web.js".to_owned()),
         (names.wasm.clone(), "embedded:faqe_web_bg.wasm".to_owned()),
         (names.bootstrap.clone(), "generator:bootstrap".to_owned()),
-        (names.css.clone(), "rust-theme:base".to_owned()),
+        (names.css.clone(), format!("theme:{}:base", names.theme_id)),
         (
-            names.iosevka_font.clone(),
-            "embedded-font:iosevka-term-ss01-light.ttf".to_owned(),
+            names.resume_css.clone(),
+            format!("theme:{}:resume", names.theme_id),
         ),
         (
-            names.theme_font.clone(),
-            "embedded-font:gohufont-uni-14.ttf".to_owned(),
+            names.slide_css.clone(),
+            format!("theme:{}:talk", names.theme_id),
         ),
-        (
-            names.japanese_font.clone(),
-            "embedded-font:dotgothic16-regular.ttf".to_owned(),
-        ),
-        (names.resume_css.clone(), "rust-theme:resume".to_owned()),
-        (names.slide_css.clone(), "rust-theme:talk".to_owned()),
         (names.site_json.clone(), "generator:site-bundle".to_owned()),
         ("LICENSE.txt".to_owned(), "embedded:LICENSE".to_owned()),
         (
@@ -1797,6 +1858,12 @@ fn build_manifest(
             "embedded:THIRD_PARTY.md".to_owned(),
         ),
     ]);
+    for asset in &names.theme_assets {
+        asset_owners.insert(
+            asset.output_path.clone(),
+            format!("theme:{}:asset:{}", names.theme_id, asset.source.id),
+        );
+    }
     for (path, _, _) in EMBEDDED_ENTRIES {
         if path.starts_with("licenses/") {
             asset_owners.insert((*path).to_owned(), format!("embedded:{path}"));

@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub const SITE_SCHEMA_VERSION: u32 = 4;
+pub const SITE_SCHEMA_VERSION: u32 = 5;
+pub const DEFAULT_THEME_ID: &str = "bresilla";
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct SiteBundle {
@@ -53,6 +54,7 @@ pub struct SiteMetadata {
     /// Absolute public origin used for canonical metadata (for example,
     /// `https://example.com`). Deployment subpaths remain a CLI concern.
     pub site_url: String,
+    pub theme: String,
     pub title: String,
     pub author: String,
     pub description: String,
@@ -79,6 +81,7 @@ impl Default for SiteMetadata {
     fn default() -> Self {
         Self {
             site_url: String::new(),
+            theme: DEFAULT_THEME_ID.into(),
             title: "Site".into(),
             author: String::new(),
             description: "Generated with FAQE".into(),

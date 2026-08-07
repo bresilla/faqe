@@ -7,22 +7,26 @@ faqe check ./content
 faqe build ./content --output ./dist
 faqe serve ./content
 faqe assets
+faqe themes
 ```
 
-The released `faqe` executable embeds the Yew WebAssembly application and emits
-the HTML shell and Rust-owned theme CSS. Icons and presentations are rendered by
-Rust/Yew. It does not ship an asset/theme directory, Reveal.js, Bootstrap, Font
-Awesome, jQuery, highlight.js, or a separately managed webfont bundle. The
-small maintained Iosevka and GohuFont uni14 font files are embedded and emitted
-by the executable. CSS exposes the upstream Gohu base glyphs under the requested
-`GohuFont uni14 Nerd Font Mono` family; Nerd icon glyphs are deliberately not
-bundled because the site uses reviewed local SVG icons. End users do not need
-Hugo, Node, Sass, Trunk, Rust, or a separate theme installation.
+The released `faqe` executable embeds the Yew WebAssembly application and a
+registry of complete named themes. A site selects one compiled theme in
+`site.toml`; that theme owns its base, resume, presentation, motion, font, and
+static asset layers. The current design is the `bresilla` theme. See
+[the theme contract](docs/themes.md) for the boundary and the steps required to
+add another theme such as `cyberpunk`.
+
+Icons and presentations are rendered by Rust/Yew. FAQE does not require
+Reveal.js, Bootstrap, Font Awesome, jQuery, highlight.js, or a separately
+managed webfont bundle. Theme assets are fingerprinted and emitted by the
+executable. End users do not need Hugo, Node, Sass, Trunk, Rust, or a separate
+theme installation.
 
 Personal media belongs in the content directory. An optional `site.toml` beside
-the Markdown can select the avatar, hover logo, and favicon with relative paths;
-the generator fingerprints and emits those files. With no `site.toml`, safe
-built-in metadata defaults are used.
+the Markdown can select the named theme, avatar, hover logo, and favicon; the
+generator fingerprints and emits referenced files. With no `site.toml`, safe
+built-in metadata and the `bresilla` theme are used.
 
 Content is organized by top-level surface folders. `home`, `about`, `cv`,
 `posts`, and `talks` are visible tabs in the canonical site; `identity`, `key`,

@@ -976,6 +976,7 @@ fn load_site_metadata(
             path: PathBuf::from("site.toml"),
             message: toml_diagnostic(&source, &error),
         })?;
+    validate_theme_id(&path, &site.theme)?;
     validate_style(&path, &site.default_style)?;
     for item in &site.menu {
         validate_public_url(&path, &item.url, true)?;
@@ -999,6 +1000,55 @@ fn load_site_metadata(
         }
     }
     Ok(site)
+}
+
+fn validate_theme_id(path: &Path, theme: &str) -> Result<(), ContentError> {
+    let valid = !theme.is_empty()
+        && theme.bytes().all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'-'
+        })
+        && theme
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && theme
+            .as_bytes()
+            .last()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && !theme.contains("--");
+    if valid {
+        Ok(())
+    } else {
+        Err(ContentError::FrontMatter {
+            path: path.to_owned(),
+            message: format!(
+                "theme {theme:?} must be a lowercase ASCII identifier containing letters, digits, and single hyphens"
+            ),
+        })
+    }
+}
+
+#[cfg(test)]
+mod theme_id_tests {
+    use super::*;
+
+    #[test]
+    fn theme_ids_are_safe_registry_keys() {
+        let path = Path::new("site.toml");
+        for valid in ["bresilla", "cyberpunk", "cyberpunk-2077", "v2"] {
+            assert!(validate_theme_id(path, valid).is_ok());
+        }
+        for invalid in [
+            "",
+            "Cyberpunk",
+            "cyber punk",
+            "-theme",
+            "theme-",
+            "theme--v2",
+        ] {
+            assert!(validate_theme_id(path, invalid).is_err());
+        }
+    }
 }
 
 fn normalize_site_url(value: &str) -> Result<String, String> {
@@ -2292,7 +2342,7 @@ fn finish_presenterm_columns(
         tag: "div".into(),
         attributes: BTreeMap::from([
             ("class".into(), "presenterm-columns".into()),
-            ("style".into(), format!("grid-template-columns:{template}")),
+            ("style".into(), format!("--faqe-columns:{template}")),
         ]),
         children,
     }));
@@ -2357,7 +2407,7 @@ fn normalize_presenterm_media(nodes: &mut [DocumentNode]) {
                     if valid_presenterm_image_width(width) {
                         element
                             .attributes
-                            .insert("style".into(), format!("width:{width}"));
+                            .insert("style".into(), format!("--faqe-image-width:{width}"));
                         element.attributes.insert("alt".into(), String::new());
                     }
                 }
@@ -2366,7 +2416,7 @@ fn normalize_presenterm_media(nodes: &mut [DocumentNode]) {
                     if valid_presenterm_image_width(width) {
                         element
                             .attributes
-                            .insert("style".into(), format!("width:{width}"));
+                            .insert("style".into(), format!("--faqe-image-width:{width}"));
                         element.attributes.insert("alt".into(), String::new());
                     }
                 }
@@ -3021,6 +3071,13 @@ fn sanitize_legacy_html(html: &str) -> String {
     let prefixes = ["aria-", "data-"].into_iter().collect();
     let schemes = ["http", "https", "mailto", "tel"].into_iter().collect();
     let style_properties = [
+        "--faqe-align",
+        "--faqe-columns",
+        "--faqe-image-border",
+        "--faqe-image-radius",
+        "--faqe-image-width",
+        "--faqe-progress-color",
+        "--faqe-progress-value",
         "background-color",
         "border",
         "border-radius",

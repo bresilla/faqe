@@ -17,18 +17,6 @@ use web_sys::Response;
 use yew::prelude::*;
 use yew::virtual_dom::{ApplyAttributeAs, VTag};
 
-const ACCESSIBILITY_CSS: &str = r#"
-.faqe-visually-hidden,.faqe-route-status,.faqe-slide-status{clip:rect(0 0 0 0);clip-path:inset(50%);height:1px;overflow:hidden;position:absolute;white-space:nowrap;width:1px}
-.faqe-skip-link{background:var(--bg-color);color:var(--fg-color);left:1rem;padding:.75rem 1rem;position:fixed;top:1rem;transform:translateY(-200%);z-index:10000}
-.faqe-skip-link:focus{transform:translateY(0)}
-a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--accent-color);outline-offset:3px}
-pre:focus-visible,code:focus-visible{outline:3px solid var(--accent-color);outline-offset:2px}
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
-.faqe-slide-background{background-position:center;background-repeat:no-repeat;background-size:cover;inset:0;position:fixed;transition:opacity .55s;z-index:0}.faqe-talk .slides{z-index:1}.faqe-talk .side-by-side{display:flex!important}
-.faqe-talk .slides section{transition-duration:var(--faqe-slide-transition-duration,.8s)}.faqe-talk .transition-none{transition:none!important}.faqe-talk .transition-fade.past,.faqe-talk .transition-fade.future{transform:translate3d(0,0,0)!important}.faqe-talk .transition-zoom.past,.faqe-talk .transition-zoom.future{transform:scale(.2)!important}.faqe-talk .transition-speed-fast{--faqe-slide-transition-duration:.4s}.faqe-talk .transition-speed-default{--faqe-slide-transition-duration:.8s}.faqe-talk .transition-speed-slow{--faqe-slide-transition-duration:1.2s}.faqe-talk .fragment:not(.visible),.faqe-talk .faqe-speaker-notes{display:none!important}.faqe-talk .fragment.visible{visibility:visible}.faqe-talk .fragment.current-fragment{outline:0}
-.faqe-talk-paused{background:#000;inset:0;position:fixed;z-index:500}.faqe-talk-overview,.faqe-talk-help,.faqe-talk-presenter{background:color-mix(in srgb,var(--bg-color) 96%,transparent);color:var(--fg-color);inset:0;overflow:auto;padding:4rem;position:fixed;z-index:400}.faqe-talk-presenter{inset:1rem;z-index:410}.faqe-talk-presenter-notes{max-width:65ch}.faqe-talk-overview-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));list-style:none;margin:2rem 0;padding:0}.faqe-talk-overview-stack{display:grid;gap:.5rem}.faqe-talk-overview button,.faqe-talk-help button,.faqe-talk-presenter button{min-height:44px;min-width:44px}.faqe-talk-overview button[aria-current=step]{outline:3px solid var(--accent-color)}.faqe-talk-utility{bottom:1rem;display:flex;gap:.5rem;opacity:0;position:fixed;right:1rem;transition:opacity .2s;z-index:120}.faqe-talk-utility:focus-within,.faqe-talk-utility:hover{opacity:1}.faqe-talk-utility button{min-height:44px;min-width:44px}
-"#;
-
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen::prelude::wasm_bindgen(start))]
 pub fn start() {
     console_error_panic_hook::set_once();
@@ -461,19 +449,19 @@ fn site_url(value: &str) -> String {
     }
 }
 
-fn apply_theme(style: &faqe_model::PageStyle) {
+fn apply_theme(style: &faqe_model::PageStyle, theme_id: &str) {
     let Some(root) = gloo_utils::document().document_element() else {
         return;
     };
     let palette = faqe_model::accessible_palette(style)
         .expect("site bundle contains only build-validated page styles");
-    let (chrome, chrome_shadow) = if style.theme == Theme::Light {
-        ("#e5e8e8", "#11121628")
+    let scheme = if style.theme == Theme::Light {
+        "light"
     } else {
-        ("#131417", "#00000048")
+        "dark"
     };
     let variables = format!(
-        "--accent-color:{};--chromatic-a:{};--chromatic-b:{};--bg-color:{};--fg-color:{};--glitch-color:{};--interactive-color:{};--accent-text-color:{};--chrome-color:{chrome};--chrome-shadow:{chrome_shadow};",
+        "--accent-color:{};--chromatic-a:{};--chromatic-b:{};--bg-color:{};--fg-color:{};--glitch-color:{};--interactive-color:{};--accent-text-color:{};",
         style.accent,
         style.chromatic[0],
         style.chromatic[1],
@@ -484,6 +472,8 @@ fn apply_theme(style: &faqe_model::PageStyle) {
         palette.accent_text
     );
     let _ = root.set_attribute("style", &variables);
+    let _ = root.set_attribute("data-faqe-theme", theme_id);
+    let _ = root.set_attribute("data-faqe-scheme", scheme);
 }
 
 fn update_title(title: &str) {
@@ -499,7 +489,7 @@ fn update_metadata(
     route: &str,
     page: Option<&Page>,
 ) {
-    apply_theme(style);
+    apply_theme(style, &site.theme);
     update_title(title);
     for (selector, attribute, value) in [
         ("meta[name=description]", "content", description.to_owned()),
@@ -714,12 +704,6 @@ fn standard_shell(props: &ShellProps) -> Html {
             || ()
         });
     }
-    let light = props
-        .page
-        .as_ref()
-        .is_some_and(|page| page.style.theme == Theme::Light);
-    let chrome = if light { "#e5e8e8" } else { "#131417" };
-    let shadow = if light { "#11121628" } else { "#00000048" };
     let foot = props
         .page
         .as_ref()
@@ -730,24 +714,27 @@ fn standard_shell(props: &ShellProps) -> Html {
         .bundle
         .page_of_type("quotes")
         .map(|page| page.route.clone());
-    let ambient_signals = props
+    let page_kind = props
         .page
         .as_ref()
-        .is_none_or(|page| page.kind != PageKind::Post);
+        .map_or("generated", |page| match page.kind {
+            PageKind::Front => "front",
+            PageKind::Post => "post",
+            PageKind::Resume => "resume",
+            PageKind::Talk => "talk",
+            PageKind::Section => "section",
+        });
 
     html! {
-        <div class={classes!("wrapper", props.page.as_ref().map(|page| page.slug.clone()))}>
-            <style>{ACCESSIBILITY_CSS}</style>
+        <div class={classes!("wrapper", props.page.as_ref().map(|page| page.slug.clone()))} data-faqe-page-kind={page_kind}>
             <a class="faqe-skip-link" href="#main">{"Skip to content"}</a>
             {props.page.as_ref().and_then(background_video)}
-            {ambient_signals.then_some(html! {
-                <aside class="anime-signals" aria-hidden="true">
-                    <span class="anime-signal anime-signal-section-nine">{"公安9課 // STAND ALONE"}</span>
-                    <span class="anime-signal anime-signal-magi">{"MAGI // PATTERN: BLUE"}</span>
-                    <span class="anime-signal anime-signal-cowboy">{"SEE YOU, SPACE COWBOY..."}</span>
-                </aside>
-            }).unwrap_or_default()}
-            <nav class="navigation" aria-label="Primary navigation" style={format!("background-color:{chrome};box-shadow:inset 0 -8px 16px 0 {shadow}")}>
+            <aside class="faqe-theme-signals" aria-hidden="true">
+                <span class="faqe-theme-signal" data-faqe-theme-slot="one"></span>
+                <span class="faqe-theme-signal" data-faqe-theme-slot="two"></span>
+                <span class="faqe-theme-signal" data-faqe-theme-slot="three"></span>
+            </aside>
+            <nav class="navigation" aria-label="Primary navigation">
                 <section class="container">
                     <span class="title"><a class="navigation-title" href={site_url("/")} aria-current={(active_route == "/").then_some("page")}>
                         <ScrambleTitle text={props.bundle.site.title.clone()} profile={GlitchProfile::Navigation} />
@@ -762,7 +749,7 @@ fn standard_shell(props: &ShellProps) -> Html {
             </nav>
             <main id="main" tabindex="-1" class="content">{props.children.clone()}</main>
             <div class="faqe-route-status" role="status" aria-live="polite" aria-atomic="true">{gloo_utils::document().title()}</div>
-            <footer class="footer" style={format!("background-color:{chrome};box-shadow:inset 0 8px 16px 0 {shadow}")}>
+            <footer class="footer">
                 <section class="container">{
                     quotes_route
                         .map(|route| html! { <a href={site_url(&route)}><p>{foot}</p></a> })
@@ -1519,13 +1506,13 @@ fn front_page(props: &OnePageProps) -> Html {
     let title = if title_missing {
         Html::default()
     } else {
-        html! { <h1 class={classes!(props.page.slug.clone(), "title", "glitchtitle")} style="margin:0!important"><ScrambleTitle text={props.page.title.clone()} /></h1> }
+        html! { <h1 class={classes!(props.page.slug.clone(), "title", "glitchtitle")}><ScrambleTitle text={props.page.title.clone()} /></h1> }
     };
     html! {
-        <section class="container list estate"><article style="padding-top:5%">
+        <section class="container list estate"><article>
             {hidden_title}
             {title}
-            <span class="frontpost" style="--titlecolor:var(--accent-color)">{document_view(&props.page.document)}</span>
+            <span class="frontpost">{document_view(&props.page.document)}</span>
         </article></section>
     }
 }
@@ -1554,16 +1541,16 @@ fn post_page(props: &PageProps) -> Html {
         <section class="container page estate"><article>
             <header>
                 <h1 class="title glitchtitle"><ScrambleTitle text={page.title.clone()} profile={GlitchProfile::PostTitle} /></h1>
-                <div class="undertitle" style="padding-left:2%"><details class="dropdown"><summary><span id="title_part" style="color:var(--bg-color);background-color:var(--accent-color);cursor:pointer;display:inline-block">{" INDEX "}</span><span>{" | "}</span>{taxonomy_summary(page)}</summary>
+                <div class="undertitle"><details class="dropdown"><summary><span id="title_part" class="post-index-label">{" INDEX "}</span><span>{" | "}</span>{taxonomy_summary(page)}</summary>
                     <nav id="TableOfContents" aria-label="Table of contents">{table_of_contents(&page.table_of_contents)}</nav>
                 </details></div>
             </header>
-            <span class="blogpost" style="--titlecolor:var(--accent-color)">
-                {page.punchline.as_ref().map(|text| html! { <div class="punchline" style="padding:3% 0;text-align:justify"><ScrambleTitle text={text.clone()} profile={GlitchProfile::Subtitle} /></div> }).unwrap_or_default()}
+            <span class="blogpost">
+                {page.punchline.as_ref().map(|text| html! { <div class="punchline"><ScrambleTitle text={text.clone()} profile={GlitchProfile::Subtitle} /></div> }).unwrap_or_default()}
                 {page.punchline.as_ref().map(|_| disclaimer(site)).unwrap_or_default()}
-                {page.description.as_ref().map(|text| html! { <div class="description" style="padding-top:2em;text-align:justify">{"In this short post, were gonna talk how to: "}{text}</div> }).unwrap_or_default()}
-                {page.tldr.as_ref().filter(|text| !text.is_empty()).map(|text| html! { <div class="tldr" style="padding-top:2em;text-align:justify"><ScrambleTitle text={"TL;DR".to_owned()} profile={GlitchProfile::Subtitle} /><div style="padding-top:2em">{text}</div></div> }).unwrap_or_default()}
-                <div class="article-separator" style="padding-top:2em;padding-bottom:2em"><hr size="1" width="60%" style="color:var(--accent-color)" /></div>
+                {page.description.as_ref().map(|text| html! { <div class="description">{"In this short post, were gonna talk how to: "}{text}</div> }).unwrap_or_default()}
+                {page.tldr.as_ref().filter(|text| !text.is_empty()).map(|text| html! { <div class="tldr"><ScrambleTitle text={"TL;DR".to_owned()} profile={GlitchProfile::Subtitle} /><div class="tldr-body">{text}</div></div> }).unwrap_or_default()}
+                <div class="article-separator"><hr /></div>
                 {article_document_view(&page.document)}
             </span>
             {references(page, site)}
@@ -1581,7 +1568,7 @@ fn taxonomy_summary(page: &Page) -> Html {
             {page.external_link.as_ref().map(|link| html! { <span class="title_posturl">{"Url: "}<a href={safe_href(link)}>{link}</a><span>{" | "}</span></span> }).unwrap_or_default()}
             <span class="series-summary">
                 {if page.series.is_empty() { Html::default() } else { html! { <>{"Series: "}{for page.series.iter().map(|value| html! { <><a href={site_url(&format!("/series/{}/", faqe_model::slugify(value)))}>{value}</a>{" "}</> })}</> } }}
-                {page.part.as_ref().map(|part| html! { <span class="title-part" style="color:var(--bg-color);background-color:var(--accent-color);cursor:pointer">{format!(" PART {part} ")}</span> }).unwrap_or_default()}
+                {page.part.as_ref().map(|part| html! { <span class="title-part">{format!(" PART {part} ")}</span> }).unwrap_or_default()}
                 <span>{"| "}</span>
             </span>
         </span>
@@ -1701,9 +1688,9 @@ fn list_page(props: &PageProps) -> Html {
         Vec::new()
     };
     html! {
-        <section class="container list estate"><article style="padding-top:5%">
-            <h1 class="title glitchtitle" style="margin:0!important"><ScrambleTitle text={props.page.title.clone()} /></h1>
-            <div class="thelist"><div class="gridlist" style="padding:1%;margin-top:4%">
+        <section class="container list estate"><article>
+            <h1 class="title glitchtitle"><ScrambleTitle text={props.page.title.clone()} /></h1>
+            <div class="thelist"><div class="gridlist">
                 {for children.into_iter().map(|page| content_card(page, &props.bundle.site.default_card_thumbnail))}
             </div></div>
             {if folders.is_empty() {
@@ -1782,28 +1769,24 @@ fn direct_child_route(parent: &str, candidate: &str) -> bool {
 }
 
 fn content_card(page: &Page, default_thumbnail: &str) -> Html {
-    let text_color = if page.style.theme == Theme::Light {
-        "#FFFFFF"
-    } else {
-        "#000000"
-    };
-    let badge_style = format!("background-color:{};color:{text_color}", page.style.accent);
+    let palette = faqe_model::accessible_palette(&page.style)
+        .expect("site bundle contains only build-validated page styles");
     let thumbnail = page
         .thumbnail
         .as_deref()
         .filter(|thumbnail| !thumbnail.is_empty())
         .unwrap_or(default_thumbnail);
     let card_style = format!(
-        "--accent-color:{};--chromatic-a:{};--chromatic-b:{};background-color:var(--accent-color)",
-        page.style.accent, page.style.chromatic[0], page.style.chromatic[1]
+        "--accent-color:{};--chromatic-a:{};--chromatic-b:{};--card-text-color:{}",
+        page.style.accent, page.style.chromatic[0], page.style.chromatic[1], palette.accent_text
     );
     html! {
         <a class="p-2" href={site_url(&page.route)}><div class="relative" style={card_style}>
             <div class="card_image" aria-hidden="true"><img class="card_image" src={site_url(thumbnail)} alt="" /></div>
-            <div class="card_date" style={badge_style.clone()}>{format_legacy_date(page.date.as_deref())}</div>
-            <div class="card_time" style={badge_style}>{icon_view("clock")}{" "}{format!("{}'", page.reading_minutes)}</div>
-            <div><hr style="border-top:.13em dashed var(--bg-color)" /></div>
-            <div class="card_box"><div class="card_title" style="background-color:var(--accent-color)">
+            <div class="card_date">{format_legacy_date(page.date.as_deref())}</div>
+            <div class="card_time">{icon_view("clock")}{" "}{format!("{}'", page.reading_minutes)}</div>
+            <div><hr class="card-rule" /></div>
+            <div class="card_box"><div class="card_title">
                 <ScrambleTitle text={page.title.clone()} profile={GlitchProfile::PostTitle} />
             </div></div>
         </div></a>
@@ -1935,10 +1918,10 @@ fn taxonomy_page(props: &TaxonomyProps) -> Html {
             .then_with(|| left.route.cmp(&right.route))
     });
     html! {
-        <section class="container list estate"><article style="padding-top:5%">
-            {props.view.root_label.as_ref().map(|label| html! { <div class="title taxonomy-root-label" style="margin:0!important" aria-hidden="true"><ScrambleTitle text={format!("{label}: ")} profile={GlitchProfile::Subtitle} /></div> }).unwrap_or_default()}
-            <h1 class="title glitchtitle" style="margin:0!important"><ScrambleTitle text={props.view.title.clone()} /></h1>
-            <div class="thelist"><div class="gridlist" style="padding:1%;margin-top:4%">{for pages.into_iter().map(|page| content_card(page, &props.bundle.site.default_card_thumbnail))}</div></div>
+        <section class="container list estate"><article>
+            {props.view.root_label.as_ref().map(|label| html! { <div class="title taxonomy-root-label" aria-hidden="true"><ScrambleTitle text={format!("{label}: ")} profile={GlitchProfile::Subtitle} /></div> }).unwrap_or_default()}
+            <h1 class="title glitchtitle"><ScrambleTitle text={props.view.title.clone()} /></h1>
+            <div class="thelist"><div class="gridlist">{for pages.into_iter().map(|page| content_card(page, &props.bundle.site.default_card_thumbnail))}</div></div>
         </article></section>
     }
 }
@@ -2743,7 +2726,6 @@ fn talk_page(props: &TalkPageProps) -> Html {
             data-faqe-talk-f={deck_state.fragment.to_string()}
             data-faqe-talk-scale={format!("{scale:.6}")}
         >
-            <style>{ACCESSIBILITY_CSS}</style>
             <h1 class="faqe-visually-hidden">{&props.page.title}</h1>
             <div class="line top"></div><div class="line bottom"></div><div class="line left"></div><div class="line right"></div>
             <div class="faqe-talk-canvas-meta" aria-hidden="true">

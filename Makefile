@@ -25,7 +25,7 @@ $(info ------------------------------------------)
 $(info Project: $(PROJECT_NAME) v$(PROJECT_VERSION))
 $(info ------------------------------------------)
 
-.PHONY: build b compile c web-bundle release-web-bundle release-build serve run r present check check-all content-check fmt fmt-check clippy rustdoc clean verify verify-all toolchain-check package-files package release help h
+.PHONY: build b compile c web-bundle release-web-bundle release-build serve run r present check check-all test content-check fmt fmt-check clippy rustdoc clean verify verify-all toolchain-check package-files package release help h
 
 build: web-bundle
 	@$(CARGO) build -p faqe-cli
@@ -71,6 +71,9 @@ check: web-bundle
 check-all: web-bundle
 	@$(CARGO) check --workspace --all-targets --all-features
 
+test: web-bundle
+	@$(CARGO) test --workspace --all-features
+
 content-check: build
 	@./target/debug/faqe check ./content
 
@@ -99,7 +102,7 @@ toolchain-check:
 		exit 1; \
 	}
 
-verify: toolchain-check fmt-check check check-all content-check clippy rustdoc
+verify: toolchain-check fmt-check check check-all test content-check clippy rustdoc
 
 verify-all: verify package
 
@@ -138,6 +141,7 @@ help:
 	@echo "  present        Open PRESENTATION with Presenterm"
 	@echo "  check          Check every workspace target"
 	@echo "  check-all      Check all workspace targets and features"
+	@echo "  test           Run all workspace tests"
 	@echo "  content-check  Validate the website content submodule"
 	@echo "  clippy         Lint native and WASM targets with warnings denied"
 	@echo "  rustdoc        Build docs with warnings denied"

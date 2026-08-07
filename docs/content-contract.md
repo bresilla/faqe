@@ -89,6 +89,7 @@ complete schema is:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `site_url` | string | Absolute production origin, without a path. |
+| `theme` | string | Lowercase identifier of the named theme compiled into the generator. Defaults to `bresilla`. |
 | `author` | string | Site author. |
 | `description` | string | Default description. |
 | `keywords` | array of strings | Default search/metadata keywords. |
@@ -112,7 +113,8 @@ weight, then name, then URL.
 
 `[default_style]` contains `accent`, `background`, and `foreground` CSS hex
 colors; a two-color `chromatic` array used by glitch effects; `theme`
-(`"dark"` or `"light"`); and optional content-root-relative `video`.
+(`"dark"` or `"light"`), which is the page color scheme rather than the
+top-level named theme; and optional content-root-relative `video`.
 Page styles may override the same fields. When a page overrides `accent`
 without declaring `chromatic`, FAQE pairs that accent with a deterministic
 channel-rotated partner. Supplying the default-style table requires its

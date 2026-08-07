@@ -397,7 +397,7 @@ fn render_node(
             let position = safe_alignment(args.named.get("position").map(String::as_str));
             Element::new("div")
                 .attr("class", "box-1 titleflex")
-                .attr("style", format!("justify-content:{position}"))
+                .attr("style", format!("--faqe-align:{position}"))
                 .child(
                     Element::new("a").attr("href", url).child(
                         Element::new("div")
@@ -440,7 +440,7 @@ fn render_node(
                         .attr("aria-valuenow", value.to_string())
                         .child(Element::new("div").attr(
                             "style",
-                            format!("height:2em;width:{value}%;background-color:{color}"),
+                            format!("--faqe-progress-value:{value}%;--faqe-progress-color:{color}"),
                         ))
                         .into(),
                 ])
@@ -487,7 +487,7 @@ fn render_node(
                         .attr(
                             "style",
                             format!(
-                                "width:{width}%;border-radius:{radius}px;border:{border}px solid var(--accent-color)"
+                                "--faqe-image-width:{width}%;--faqe-image-radius:{radius}px;--faqe-image-border:{border}px"
                             ),
                         )
                         .child(image)
@@ -581,7 +581,6 @@ fn render_node(
                     .into(),
                 Element::new("span")
                     .attr("class", "sidenote")
-                    .attr("style", "padding:0 2%")
                     .child(body)
                     .into(),
             ])
