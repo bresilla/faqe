@@ -2241,7 +2241,7 @@ fn preferred_viewport_size(visual: Option<(f64, f64)>, layout: (f64, f64)) -> (f
 
 #[cfg(test)]
 mod deck_layout_tests {
-    use super::{deck_zoom_ratio, talk_location_for_slide_number};
+    use super::{deck_zoom_ratio, talk_chrome_fill, talk_location_for_slide_number};
 
     #[test]
     fn browser_zoom_is_relative_to_the_initial_pixel_ratio() {
@@ -2273,6 +2273,13 @@ mod deck_layout_tests {
         );
         assert!(talk_location_for_slide_number(0, &groups).is_none());
         assert!(talk_location_for_slide_number(7, &groups).is_none());
+    }
+
+    #[test]
+    fn footer_fill_tracks_the_progress_endpoint() {
+        assert_eq!(talk_chrome_fill(80.0, 100.0, 60.0), 0.0);
+        assert_eq!(talk_chrome_fill(125.0, 100.0, 60.0), 25.0);
+        assert_eq!(talk_chrome_fill(180.0, 100.0, 60.0), 60.0);
     }
 }
 
@@ -2710,6 +2717,16 @@ fn talk_page(props: &TalkPageProps) -> Html {
     let (completed, total, progress_percent) =
         talk_progress_with_fragments(&deck_state, &group_lengths, &fragment_counts);
     let progress = format!("width:{progress_percent:.3}%");
+    {
+        let talk_root = talk_root.clone();
+        let viewport_key = (viewport.0.to_bits(), viewport.1.to_bits());
+        use_effect_with((completed, viewport_key), move |_| {
+            if let Some(root) = talk_root.cast::<web_sys::Element>() {
+                update_talk_chrome_progress(&root);
+            }
+            || ()
+        });
+    }
     let config = DeckConfig::default();
     let scale = deck_scale(viewport.0, viewport.1, config)
         * deck_zoom_ratio(*initial_pixel_ratio, browser_pixel_ratio());
@@ -2875,7 +2892,6 @@ fn talk_page(props: &TalkPageProps) -> Html {
             data-faqe-talk-v={current.1.to_string()}
             data-faqe-talk-f={deck_state.fragment.to_string()}
             data-faqe-talk-scale={format!("{scale:.6}")}
-            style={format!("--faqe-talk-progress:{progress_percent:.3}%")}
         >
             <h1 class="faqe-visually-hidden">{&props.page.title}</h1>
             <div class="line top"></div><div class="line bottom"></div><div class="line left"></div><div class="line right"></div>
@@ -2927,6 +2943,32 @@ fn talk_page(props: &TalkPageProps) -> Html {
             <div class="faqe-slide-status" role="status" aria-live="polite" aria-atomic="true">{talk_status_text(current, &group_lengths, deck_state.fragment, active_fragment_count)}</div>
         </main>
     }
+}
+
+fn update_talk_chrome_progress(root: &web_sys::Element) {
+    let Ok(Some(progress)) = root.query_selector(".progress span") else {
+        return;
+    };
+    let endpoint = progress.get_bounding_client_rect().right();
+    let Ok(elements) = root.query_selector_all(".faqe-talk-canvas-meta .faqe-talk-chrome-ink")
+    else {
+        return;
+    };
+    for index in 0..elements.length() {
+        let Some(element) = elements
+            .get(index)
+            .and_then(|node| node.dyn_into::<web_sys::Element>().ok())
+        else {
+            continue;
+        };
+        let bounds = element.get_bounding_client_rect();
+        let filled = talk_chrome_fill(endpoint, bounds.left(), bounds.width());
+        let _ = element.set_attribute("style", &format!("--faqe-talk-ink-progress:{filled:.2}px"));
+    }
+}
+
+fn talk_chrome_fill(endpoint: f64, left: f64, width: f64) -> f64 {
+    (endpoint - left).clamp(0.0, width.max(0.0))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
