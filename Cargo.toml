@@ -58,6 +58,7 @@ features = [
     "History",
     "HtmlAnchorElement",
     "HtmlElement",
+    "HtmlInputElement",
     "KeyboardEvent",
     "Location",
     "MediaQueryList",

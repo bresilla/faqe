@@ -2085,7 +2085,7 @@ impl Default for DeckConfig {
             height: 700.0,
             margin: 0.10,
             min_scale: 0.2,
-            max_scale: 1.5,
+            max_scale: 4.0,
         }
     }
 }
@@ -2191,6 +2191,23 @@ fn deck_scale(viewport_width: f64, viewport_height: f64, config: DeckConfig) -> 
         .clamp(config.min_scale, config.max_scale)
 }
 
+fn deck_zoom_ratio(initial_pixel_ratio: f64, current_pixel_ratio: f64) -> f64 {
+    if !initial_pixel_ratio.is_finite()
+        || !current_pixel_ratio.is_finite()
+        || initial_pixel_ratio <= 0.0
+        || current_pixel_ratio <= 0.0
+    {
+        return 1.0;
+    }
+    (current_pixel_ratio / initial_pixel_ratio).clamp(0.5, 3.0)
+}
+
+fn browser_pixel_ratio() -> f64 {
+    web_sys::window()
+        .map(|window| window.device_pixel_ratio())
+        .unwrap_or(1.0)
+}
+
 fn viewport_size() -> (f64, f64) {
     web_sys::window()
         .map(|window| {
@@ -2220,6 +2237,43 @@ fn preferred_viewport_size(visual: Option<(f64, f64)>, layout: (f64, f64)) -> (f
     visual
         .filter(|(width, height)| *width > 0.0 && *height > 0.0)
         .unwrap_or(layout)
+}
+
+#[cfg(test)]
+mod deck_layout_tests {
+    use super::{deck_zoom_ratio, talk_location_for_slide_number};
+
+    #[test]
+    fn browser_zoom_is_relative_to_the_initial_pixel_ratio() {
+        assert_eq!(deck_zoom_ratio(2.0, 2.0), 1.0);
+        assert_eq!(deck_zoom_ratio(2.0, 2.5), 1.25);
+        assert_eq!(deck_zoom_ratio(2.0, 1.5), 0.75);
+    }
+
+    #[test]
+    fn browser_zoom_rejects_invalid_ratios() {
+        assert_eq!(deck_zoom_ratio(0.0, 2.0), 1.0);
+        assert_eq!(deck_zoom_ratio(2.0, f64::NAN), 1.0);
+    }
+
+    #[test]
+    fn slide_number_maps_to_horizontal_and_vertical_positions() {
+        let groups = [1, 3, 2];
+        assert_eq!(
+            talk_location_for_slide_number(1, &groups).unwrap().position,
+            (0, 0)
+        );
+        assert_eq!(
+            talk_location_for_slide_number(3, &groups).unwrap().position,
+            (1, 1)
+        );
+        assert_eq!(
+            talk_location_for_slide_number(6, &groups).unwrap().position,
+            (2, 1)
+        );
+        assert!(talk_location_for_slide_number(0, &groups).is_none());
+        assert!(talk_location_for_slide_number(7, &groups).is_none());
+    }
 }
 
 fn class_has_token(attributes: &std::collections::BTreeMap<String, String>, token: &str) -> bool {
@@ -2410,11 +2464,13 @@ fn talk_page(props: &TalkPageProps) -> Html {
         deck_state_at_location(location, &initial_groups, &initial_fragment_counts)
     });
     let viewport = use_state(viewport_size);
+    let initial_pixel_ratio = use_state(browser_pixel_ratio);
     let talk_root = use_node_ref();
     let overview = use_state(|| false);
     let paused = use_state(|| false);
     let help_open = use_state(|| false);
     let presenter_open = use_state(|| false);
+    let utilities_open = use_state(|| false);
     let fullscreen = use_state(|| false);
     let exit_href = site_url(&props.exit_route);
     let exit_click = {
@@ -2655,7 +2711,8 @@ fn talk_page(props: &TalkPageProps) -> Html {
         talk_progress_with_fragments(&deck_state, &group_lengths, &fragment_counts);
     let progress = format!("width:{progress_percent:.3}%");
     let config = DeckConfig::default();
-    let scale = deck_scale(viewport.0, viewport.1, config);
+    let scale = deck_scale(viewport.0, viewport.1, config)
+        * deck_zoom_ratio(*initial_pixel_ratio, browser_pixel_ratio());
     let slides_style = format!(
         "height:{}px;width:{}px;transform:translate(-50%,-50%) scale({scale:.6})",
         config.height, config.width
@@ -2716,9 +2773,58 @@ fn talk_page(props: &TalkPageProps) -> Html {
         let presenter_open = presenter_open.clone();
         Callback::from(move |_| presenter_open.set(!*presenter_open))
     };
+    let toggle_utilities = {
+        let utilities_open = utilities_open.clone();
+        Callback::from(move |_| utilities_open.set(!*utilities_open))
+    };
     let toggle_fullscreen_click = {
         let talk_root = talk_root.clone();
         Callback::from(move |_| toggle_fullscreen(&talk_root))
+    };
+    let jump_to_slide = {
+        let deck_state = deck_state.clone();
+        let group_lengths = group_lengths.clone();
+        let fragment_counts = fragment_counts.clone();
+        Rc::new(move |input: web_sys::HtmlInputElement| {
+            let location = input
+                .value()
+                .parse::<usize>()
+                .ok()
+                .and_then(|number| talk_location_for_slide_number(number, &group_lengths));
+            if let Some(location) = location {
+                deck_state.set(deck_state_at_location(
+                    location,
+                    &group_lengths,
+                    &fragment_counts,
+                ));
+            }
+        })
+    };
+    let jump_to_slide_change = {
+        let jump_to_slide = jump_to_slide.clone();
+        Callback::from(move |event: Event| {
+            if let Some(input) = event
+                .target()
+                .and_then(|target| target.dyn_into::<web_sys::HtmlInputElement>().ok())
+            {
+                jump_to_slide(input);
+            }
+        })
+    };
+    let jump_to_slide_key = {
+        let jump_to_slide = jump_to_slide.clone();
+        Callback::from(move |event: KeyboardEvent| {
+            if event.key() != "Enter" {
+                return;
+            }
+            event.prevent_default();
+            if let Some(input) = event
+                .target()
+                .and_then(|target| target.dyn_into::<web_sys::HtmlInputElement>().ok())
+            {
+                jump_to_slide(input);
+            }
+        })
     };
     let seek_progress = {
         let deck_state = deck_state.clone();
@@ -2769,28 +2875,46 @@ fn talk_page(props: &TalkPageProps) -> Html {
             data-faqe-talk-v={current.1.to_string()}
             data-faqe-talk-f={deck_state.fragment.to_string()}
             data-faqe-talk-scale={format!("{scale:.6}")}
+            style={format!("--faqe-talk-progress:{progress_percent:.3}%")}
         >
             <h1 class="faqe-visually-hidden">{&props.page.title}</h1>
             <div class="line top"></div><div class="line bottom"></div><div class="line left"></div><div class="line right"></div>
-            <div class="faqe-talk-canvas-meta" aria-hidden="true">
+            <div class="faqe-talk-canvas-title" aria-hidden="true">{&props.page.title}</div>
+            <div class="faqe-talk-canvas-meta">
                 <span>{canvas_author}</span>
-                <span class="faqe-talk-canvas-count">{format!("{slide_number:02} / {slide_total:02}")}</span>
+                <label class="faqe-talk-canvas-count">
+                    <span class="faqe-visually-hidden">{"Go to slide"}</span>
+                    <input
+                        type="number"
+                        min="1"
+                        max={slide_total.to_string()}
+                        value={slide_number.to_string()}
+                        inputmode="numeric"
+                        aria-label="Current slide; type a slide number and press Enter"
+                        onchange={jump_to_slide_change}
+                        onkeydown={jump_to_slide_key}
+                    />
+                    <span>{format!(" / {slide_total:02}")}</span>
+                </label>
             </div>
             <div class="faqe-slide-background" style={background_style} aria-hidden="true"></div>
             <div class="slides" style={slides_style} aria-hidden={paused.to_string()}>
                 {if deck.slides.is_empty() { html! { <section class="present"><p>{"This presentation has no slides."}</p></section> } } else { html! { {for talk_sections(&deck.slides, current, deck_state.fragment, &props.page.style)} } }}
             </div>
-            <nav class="controls" aria-label="Presentation controls" data-controls-layout="bottom-right" data-controls-back-arrows="faded">
+            <nav class="controls" aria-label="Presentation controls" data-controls-layout="top-border" data-controls-back-arrows="faded">
                 <button class="navigate-previous" aria-label="Previous slide" disabled={completed <= 1} onclick={move_callback(TalkMove::Previous)}>{"<"}</button>
                 <button class="navigate-next" aria-label="Next slide" disabled={at_last} onclick={move_callback(TalkMove::Next)}>{">"}</button>
+                {if *utilities_open { html! {
+                    <span id="faqe-talk-utilities" class="faqe-talk-utility" role="group" aria-label="Presentation utilities">
+                        <button type="button" aria-label="Toggle slide overview" aria-pressed={overview.to_string()} onclick={toggle_overview}>{"O"}</button>
+                        <button type="button" aria-label="Pause or resume presentation" aria-pressed={paused.to_string()} onclick={toggle_pause}>{"B"}</button>
+                        <button type="button" aria-label="Toggle fullscreen" aria-pressed={fullscreen.to_string()} onclick={toggle_fullscreen_click}>{"F"}</button>
+                        <button type="button" aria-label="Show keyboard help" aria-pressed={help_open.to_string()} onclick={toggle_help.clone()}>{"?"}</button>
+                        <button type="button" aria-label="Toggle speaker view" aria-pressed={presenter_open.to_string()} onclick={toggle_presenter.clone()}>{"S"}</button>
+                    </span>
+                } } else { Html::default() }}
+                <button type="button" class="faqe-talk-utilities-toggle" aria-label="Toggle presentation utilities" aria-expanded={utilities_open.to_string()} aria-controls="faqe-talk-utilities" onclick={toggle_utilities}>{"TOOLS"}</button>
                 <a class="faqe-talk-exit" aria-label="Exit presentation" href={site_url(&props.exit_route)} onclick={exit_click}>{"EXIT"}</a>
-            </nav>
-            <nav class="faqe-talk-utility" aria-label="Presentation utilities">
-                <button type="button" aria-label="Toggle slide overview" aria-pressed={overview.to_string()} onclick={toggle_overview}>{"O"}</button>
-                <button type="button" aria-label="Pause or resume presentation" aria-pressed={paused.to_string()} onclick={toggle_pause}>{"B"}</button>
-                <button type="button" aria-label="Toggle fullscreen" aria-pressed={fullscreen.to_string()} onclick={toggle_fullscreen_click}>{"F"}</button>
-                <button type="button" aria-label="Show keyboard help" aria-pressed={help_open.to_string()} onclick={toggle_help.clone()}>{"?"}</button>
-                <button type="button" aria-label="Toggle speaker view" aria-pressed={presenter_open.to_string()} onclick={toggle_presenter.clone()}>{"S"}</button>
             </nav>
             {if *overview { talk_overview(&group_lengths, current, select_slide) } else { Html::default() }}
             {if *help_open { talk_help(toggle_help) } else { Html::default() }}
@@ -3307,6 +3431,20 @@ fn talk_slide_index(position: (usize, usize), groups: &[usize]) -> Option<usize>
     }
     let position = normalize_talk_position(position, groups);
     Some(groups.iter().take(position.0).sum::<usize>() + position.1)
+}
+
+fn talk_location_for_slide_number(number: usize, groups: &[usize]) -> Option<TalkLocation> {
+    let mut remaining = number.checked_sub(1)?;
+    for (horizontal, count) in groups.iter().copied().enumerate() {
+        if remaining < count {
+            return Some(TalkLocation {
+                position: (horizontal, remaining),
+                fragment: 0,
+            });
+        }
+        remaining = remaining.saturating_sub(count);
+    }
+    None
 }
 
 fn fragment_count_at(
