@@ -1874,6 +1874,7 @@ fn parse_talk(
     front_matter: &serde_yaml::Value,
     context: &mut TalkParseContext<'_>,
 ) -> Result<TalkDeck, ContentError> {
+    let author = presenterm_author(front_matter);
     let mut slides = Vec::new();
     let mut markdown = String::new();
     let mut fence = None;
@@ -1902,7 +1903,7 @@ fn parse_talk(
         }
     }
     push_presenterm_slide(&mut slides, &mut markdown, context)?;
-    Ok(TalkDeck { slides })
+    Ok(TalkDeck { author, slides })
 }
 
 fn opening_fence(line: &str) -> Option<(char, usize)> {
@@ -1935,17 +1936,8 @@ fn presenterm_intro_slide(
 ) -> Result<Option<TalkSlide>, ContentError> {
     let title = yaml_string(front_matter, &["title"]);
     let subtitle = yaml_string(front_matter, &["sub_title"]);
-    let author = yaml_string(front_matter, &["author"]);
-    let authors = yaml_value_at(front_matter, &["authors"])
-        .and_then(serde_yaml::Value::as_sequence)
-        .map(|authors| {
-            authors
-                .iter()
-                .filter_map(serde_yaml::Value::as_str)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    if title.is_none() && subtitle.is_none() && author.is_none() && authors.is_empty() {
+    let author = presenterm_author(front_matter);
+    if title.is_none() && subtitle.is_none() && author.is_empty() {
         return Ok(None);
     }
     let mut markdown = String::new();
@@ -1958,13 +1950,9 @@ fn presenterm_intro_slide(
         markdown.push_str(subtitle);
         markdown.push_str("\n\n");
     }
-    if let Some(author) = author {
+    if !author.is_empty() {
         markdown.push_str("**");
-        markdown.push_str(author);
-        markdown.push_str("**\n");
-    } else if !authors.is_empty() {
-        markdown.push_str("**");
-        markdown.push_str(&authors.join(" · "));
+        markdown.push_str(&author);
         markdown.push_str("**\n");
     }
     let document = presenterm_markdown_document(&markdown, context, false)?;
@@ -1973,6 +1961,27 @@ fn presenterm_intro_slide(
         attributes: BTreeMap::from([("class".into(), "title-slide".into())]),
         vertical_group: None,
     }))
+}
+
+fn presenterm_author(front_matter: &serde_yaml::Value) -> String {
+    if let Some(author) = yaml_string(front_matter, &["author"])
+        .map(str::trim)
+        .filter(|author| !author.is_empty())
+    {
+        return author.to_owned();
+    }
+    yaml_value_at(front_matter, &["authors"])
+        .and_then(serde_yaml::Value::as_sequence)
+        .map(|authors| {
+            authors
+                .iter()
+                .filter_map(serde_yaml::Value::as_str)
+                .map(str::trim)
+                .filter(|author| !author.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ")
+        })
+        .unwrap_or_default()
 }
 
 struct PresentermColumns {
@@ -3529,6 +3538,48 @@ fn main() {}
 
         assert!(kinds.contains(&ElementKind::Progress));
         assert!(kinds.contains(&ElementKind::CodeBlock));
+    }
+
+    #[test]
+    fn presentation_author_is_preserved_for_the_deck() {
+        let mut assets = BTreeMap::new();
+        let mut context = TalkParseContext {
+            content_root: Path::new("."),
+            page_path: Path::new("talks/authored.md"),
+            assets: &mut assets,
+        };
+        let front_matter = serde_yaml::from_str(
+            r#"
+title: Authored deck
+author: Trim Bresilla & Anouk Leunissen
+"#,
+        )
+        .unwrap();
+        let deck = parse_talk("# Body", &front_matter, &mut context).unwrap();
+
+        assert_eq!(deck.author, "Trim Bresilla & Anouk Leunissen");
+    }
+
+    #[test]
+    fn presentation_authors_are_joined_for_the_deck() {
+        let mut assets = BTreeMap::new();
+        let mut context = TalkParseContext {
+            content_root: Path::new("."),
+            page_path: Path::new("talks/coauthored.md"),
+            assets: &mut assets,
+        };
+        let front_matter = serde_yaml::from_str(
+            r#"
+title: Coauthored deck
+authors:
+  - Trim Bresilla
+  - Anouk Leunissen
+"#,
+        )
+        .unwrap();
+        let deck = parse_talk("# Body", &front_matter, &mut context).unwrap();
+
+        assert_eq!(deck.author, "Trim Bresilla · Anouk Leunissen");
     }
 
     fn collect_element_kinds(nodes: &[DocumentNode], kinds: &mut Vec<ElementKind>) {

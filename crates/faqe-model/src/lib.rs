@@ -627,6 +627,8 @@ pub struct ResumeSkill {
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct TalkDeck {
+    #[serde(default)]
+    pub author: String,
     pub slides: Vec<TalkSlide>,
 }
 

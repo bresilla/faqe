@@ -42,7 +42,11 @@ thread_local! {
 #[derive(Clone, Copy)]
 enum HighlightLanguage {
     Bash,
+    C,
+    Cpp,
     Json,
+    Python,
+    Rust,
     Toml,
 }
 
@@ -70,7 +74,11 @@ pub fn render(language: &str, source: &str) -> String {
 fn highlight_language(language: &str) -> Option<HighlightLanguage> {
     match language.trim().to_ascii_lowercase().as_str() {
         "bash" | "console" | "sh" | "shell" | "zsh" => Some(HighlightLanguage::Bash),
+        "c" | "h" => Some(HighlightLanguage::C),
+        "c++" | "cc" | "cpp" | "cxx" | "hpp" => Some(HighlightLanguage::Cpp),
         "json" => Some(HighlightLanguage::Json),
+        "py" | "python" | "python3" => Some(HighlightLanguage::Python),
+        "rs" | "rust" => Some(HighlightLanguage::Rust),
         "toml" => Some(HighlightLanguage::Toml),
         _ => None,
     }
@@ -108,6 +116,75 @@ fn json_highlight_configuration() -> &'static HighlightConfiguration {
     })
 }
 
+fn cpp_highlight_configuration() -> &'static HighlightConfiguration {
+    static CONFIGURATION: OnceLock<HighlightConfiguration> = OnceLock::new();
+    CONFIGURATION.get_or_init(|| {
+        let highlights = format!(
+            "{}\n{}",
+            tree_sitter_c::HIGHLIGHT_QUERY,
+            tree_sitter_cpp::HIGHLIGHT_QUERY
+        );
+        let mut configuration = HighlightConfiguration::new(
+            tree_sitter_cpp::LANGUAGE.into(),
+            "cpp",
+            &highlights,
+            "",
+            "",
+        )
+        .expect("bundled C++ highlight query must compile");
+        configuration.configure(TREE_SITTER_HIGHLIGHTS);
+        configuration
+    })
+}
+
+fn c_highlight_configuration() -> &'static HighlightConfiguration {
+    static CONFIGURATION: OnceLock<HighlightConfiguration> = OnceLock::new();
+    CONFIGURATION.get_or_init(|| {
+        let mut configuration = HighlightConfiguration::new(
+            tree_sitter_c::LANGUAGE.into(),
+            "c",
+            tree_sitter_c::HIGHLIGHT_QUERY,
+            "",
+            "",
+        )
+        .expect("bundled C highlight query must compile");
+        configuration.configure(TREE_SITTER_HIGHLIGHTS);
+        configuration
+    })
+}
+
+fn python_highlight_configuration() -> &'static HighlightConfiguration {
+    static CONFIGURATION: OnceLock<HighlightConfiguration> = OnceLock::new();
+    CONFIGURATION.get_or_init(|| {
+        let mut configuration = HighlightConfiguration::new(
+            tree_sitter_python::LANGUAGE.into(),
+            "python",
+            tree_sitter_python::HIGHLIGHTS_QUERY,
+            "",
+            "",
+        )
+        .expect("bundled Python highlight query must compile");
+        configuration.configure(TREE_SITTER_HIGHLIGHTS);
+        configuration
+    })
+}
+
+fn rust_highlight_configuration() -> &'static HighlightConfiguration {
+    static CONFIGURATION: OnceLock<HighlightConfiguration> = OnceLock::new();
+    CONFIGURATION.get_or_init(|| {
+        let mut configuration = HighlightConfiguration::new(
+            tree_sitter_rust::LANGUAGE.into(),
+            "rust",
+            tree_sitter_rust::HIGHLIGHTS_QUERY,
+            "",
+            "",
+        )
+        .expect("bundled Rust highlight query must compile");
+        configuration.configure(TREE_SITTER_HIGHLIGHTS);
+        configuration
+    })
+}
+
 fn toml_highlight_configuration() -> &'static HighlightConfiguration {
     static CONFIGURATION: OnceLock<HighlightConfiguration> = OnceLock::new();
     CONFIGURATION.get_or_init(|| {
@@ -127,7 +204,11 @@ fn toml_highlight_configuration() -> &'static HighlightConfiguration {
 fn highlight_configuration(language: HighlightLanguage) -> &'static HighlightConfiguration {
     match language {
         HighlightLanguage::Bash => bash_highlight_configuration(),
+        HighlightLanguage::C => c_highlight_configuration(),
+        HighlightLanguage::Cpp => cpp_highlight_configuration(),
         HighlightLanguage::Json => json_highlight_configuration(),
+        HighlightLanguage::Python => python_highlight_configuration(),
+        HighlightLanguage::Rust => rust_highlight_configuration(),
         HighlightLanguage::Toml => toml_highlight_configuration(),
     }
 }
@@ -176,8 +257,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn code_blocks_identify_themselves_as_primitives() {
-        let html = render("rust", "fn main() {}\n");
+    fn supported_code_blocks_use_tree_sitter() {
+        for (language, source) in [
+            ("c", "int main(void) { return 0; }\n"),
+            ("cpp", "int main() { return 0; }\n"),
+            ("python", "def main():\n    return 0\n"),
+            ("rust", "fn main() {}\n"),
+        ] {
+            let html = render(language, source);
+            assert!(html.contains("data-faqe-primitive=\"code-block\""));
+            assert!(html.contains("data-highlighter=\"TREE-SITTER\""));
+            assert!(html.contains("class=\"ts-"), "{language}: {html}");
+        }
+    }
+
+    #[test]
+    fn unknown_code_blocks_use_plain_text() {
+        let html = render("unknown", "some plain text\n");
         assert!(html.contains("data-faqe-primitive=\"code-block\""));
         assert!(html.contains("data-highlighter=\"PLAIN\""));
     }

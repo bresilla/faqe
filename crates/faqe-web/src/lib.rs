@@ -2392,6 +2392,11 @@ fn talk_page(props: &TalkPageProps) -> Html {
     let Some(deck) = props.page.talk.as_ref() else {
         return html! { <main id="main" tabindex="-1" class="reveal faqe-error" role="alert"><h1>{&props.page.title}</h1><p>{"Presentation data is missing."}</p></main> };
     };
+    let canvas_author = if deck.author.trim().is_empty() {
+        props.author.as_str()
+    } else {
+        deck.author.as_str()
+    };
     let group_lengths = talk_group_lengths(&deck.slides);
     let fragment_counts = talk_fragment_counts(&deck.slides);
     let initial_groups = group_lengths.clone();
@@ -2768,7 +2773,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
             <h1 class="faqe-visually-hidden">{&props.page.title}</h1>
             <div class="line top"></div><div class="line bottom"></div><div class="line left"></div><div class="line right"></div>
             <div class="faqe-talk-canvas-meta" aria-hidden="true">
-                <span>{&props.author}</span>
+                <span>{canvas_author}</span>
                 <span class="faqe-talk-canvas-count">{format!("{slide_number:02} / {slide_total:02}")}</span>
             </div>
             <div class="faqe-slide-background" style={background_style} aria-hidden="true"></div>
