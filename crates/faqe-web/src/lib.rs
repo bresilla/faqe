@@ -2880,7 +2880,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
             <h1 class="faqe-visually-hidden">{&props.page.title}</h1>
             <div class="line top"></div><div class="line bottom"></div><div class="line left"></div><div class="line right"></div>
             <div class="faqe-talk-canvas-title" aria-hidden="true">
-                <span class="faqe-talk-chrome-ink">{&props.page.title}</span>
+                <span>{&props.page.title}</span>
             </div>
             <div class="faqe-talk-canvas-meta">
                 <span class="faqe-talk-chrome-ink">{canvas_author}</span>
