@@ -1096,6 +1096,7 @@ enum GlitchProfile {
     Navigation,
     Brand,
     PostTitle,
+    PostTitleAccent,
     Subtitle,
 }
 
@@ -1104,6 +1105,58 @@ struct ScrambleTitleProps {
     text: String,
     #[prop_or_default]
     profile: GlitchProfile,
+}
+
+#[derive(Properties, PartialEq)]
+struct PostTitleProps {
+    text: String,
+}
+
+#[function_component(PostTitle)]
+fn post_title(props: &PostTitleProps) -> Html {
+    let (leading, accent) = post_title_parts(&props.text);
+    html! {
+        <span class="faqe-post-title" aria-label={props.text.clone()}>
+            {if leading.is_empty() {
+                Html::default()
+            } else {
+                html! { <><span class="faqe-post-title-leading" aria-hidden="true"><ScrambleTitle text={leading} profile={GlitchProfile::PostTitle} /></span>{" "}</> }
+            }}
+            <span class="faqe-post-title-accent" aria-hidden="true"><ScrambleTitle text={accent} profile={GlitchProfile::PostTitleAccent} /></span>
+        </span>
+    }
+}
+
+fn post_title_parts(text: &str) -> (String, String) {
+    let title = text.trim();
+    let Some((split, _)) = title
+        .char_indices()
+        .rev()
+        .find(|(_, value)| value.is_whitespace())
+    else {
+        return (String::new(), title.to_owned());
+    };
+    (
+        title[..split].trim_end().to_owned(),
+        title[split..].trim_start().to_owned(),
+    )
+}
+
+#[cfg(test)]
+mod post_title_tests {
+    use super::post_title_parts;
+
+    #[test]
+    fn accents_the_last_word_of_a_post_title() {
+        assert_eq!(
+            post_title_parts("The Balthasar Evidence Chain"),
+            ("The Balthasar Evidence".into(), "Chain".into())
+        );
+        assert_eq!(
+            post_title_parts("Hacking"),
+            (String::new(), "Hacking".into())
+        );
+    }
 }
 
 #[function_component(ScrambleTitle)]
@@ -1161,6 +1214,7 @@ fn scramble_title(props: &ScrambleTitleProps) -> Html {
                             | GlitchProfile::Navigation
                             | GlitchProfile::Title
                             | GlitchProfile::PostTitle => 1,
+                            GlitchProfile::PostTitleAccent => 4,
                             GlitchProfile::Subtitle => 1,
                         };
                         let next = if frame >= last_frame {
@@ -1225,6 +1279,7 @@ fn scramble_decode_frames(text: &str, profile: GlitchProfile) -> u16 {
         GlitchProfile::Navigation => 6_u16.saturating_add(characters),
         GlitchProfile::Title => 6_u16.saturating_add(characters),
         GlitchProfile::PostTitle => 14,
+        GlitchProfile::PostTitleAccent => 22,
         GlitchProfile::Subtitle => 0,
     }
 }
@@ -1235,6 +1290,7 @@ fn scramble_frame_delay(profile: GlitchProfile) -> u32 {
         GlitchProfile::Navigation => 55,
         GlitchProfile::Title => 55,
         GlitchProfile::PostTitle => 48,
+        GlitchProfile::PostTitleAccent => 34,
         GlitchProfile::Subtitle => 60,
     }
 }
@@ -1259,6 +1315,7 @@ fn scramble_decoding_text(text: &str, frame: u16, profile: GlitchProfile) -> Str
             GlitchProfile::Navigation => 6,
             GlitchProfile::Title => 6,
             GlitchProfile::PostTitle => 3,
+            GlitchProfile::PostTitleAccent => 1,
             GlitchProfile::Subtitle => unreachable!(),
         };
         let characters = text
@@ -1266,7 +1323,10 @@ fn scramble_decoding_text(text: &str, frame: u16, profile: GlitchProfile) -> Str
             .filter(|character| !character.is_whitespace())
             .count();
         let reveal_frame = frame.saturating_sub(warmup) as usize;
-        let revealed = if profile == GlitchProfile::PostTitle {
+        let revealed = if matches!(
+            profile,
+            GlitchProfile::PostTitle | GlitchProfile::PostTitleAccent
+        ) {
             let reveal_frames =
                 scramble_decode_frames(text, profile).saturating_sub(warmup) as usize;
             characters.saturating_mul(reveal_frame) / reveal_frames.max(1)
@@ -1308,6 +1368,7 @@ fn scramble_glitched_text(text: &str, cycle: u16, frame: u8, profile: GlitchProf
     let seed = scramble_hash(text).wrapping_add(cycle as u64 * 0x9e37_79b9);
     let count = match profile {
         GlitchProfile::Navigation => 1,
+        GlitchProfile::PostTitleAccent => 2 + seed as usize % 4,
         _ => 1 + seed as usize % 3,
     }
     .min(positions.len());
@@ -1339,7 +1400,8 @@ fn scramble_glitched_text(text: &str, cycle: u16, frame: u8, profile: GlitchProf
                     GlitchProfile::Brand
                     | GlitchProfile::Navigation
                     | GlitchProfile::Title
-                    | GlitchProfile::PostTitle => scramble_glyph(seed, index, frame as usize),
+                    | GlitchProfile::PostTitle
+                    | GlitchProfile::PostTitleAccent => scramble_glyph(seed, index, frame as usize),
                     GlitchProfile::Subtitle => {
                         shuffled_letter(seed, index, frame as usize, character)
                     }
@@ -1358,6 +1420,7 @@ fn scramble_glitch_delay(text: &str, cycle: u16, profile: GlitchProfile) -> u32 
         GlitchProfile::Navigation => 6_500 + entropy % 5_501,
         GlitchProfile::Title => 1_500 + entropy % 1_801,
         GlitchProfile::PostTitle => 1_700 + entropy % 2_001,
+        GlitchProfile::PostTitleAccent => 550 + entropy % 751,
         GlitchProfile::Subtitle => 10_000 + entropy % 10_001,
     }
 }
@@ -1516,7 +1579,7 @@ fn post_page(props: &PageProps) -> Html {
     html! {
         <section class="container page estate"><article>
             <header>
-                <h1 class="title glitchtitle"><ScrambleTitle text={page.title.clone()} profile={GlitchProfile::PostTitle} /></h1>
+                <h1 class="title glitchtitle"><PostTitle text={page.title.clone()} /></h1>
                 <div class="undertitle"><details class="dropdown"><summary><span id="title_part" class="post-index-label">{" INDEX "}</span><span>{" | "}</span>{taxonomy_summary(page)}</summary>
                     <nav id="TableOfContents" aria-label="Table of contents">{table_of_contents(&page.table_of_contents)}</nav>
                 </details></div>
@@ -3667,15 +3730,59 @@ fn render_document_node_with_article_headings(
                     ),
                 );
             }
+            let feature_hero = element
+                .attributes
+                .get("data-faqe-primitive")
+                .is_some_and(|value| value == "hero");
             for child in &element.children {
-                tag.add_child(render_document_node_with_article_headings(
-                    child,
-                    article_headings,
-                    heading_profile,
-                ));
+                if feature_hero
+                    && matches!(child, DocumentNode::Element(child) if child.tag == "strong")
+                {
+                    tag.add_child(render_feature_hero_title(child, article_headings));
+                } else {
+                    tag.add_child(render_document_node_with_article_headings(
+                        child,
+                        article_headings,
+                        heading_profile,
+                    ));
+                }
             }
             tag.into()
         }
+    }
+}
+
+fn render_feature_hero_title(node: &DocumentNode, article_headings: bool) -> Html {
+    let DocumentNode::Element(title) = node else {
+        return Html::default();
+    };
+    html! {
+        <strong>{for title.children.iter().map(|child| {
+            if matches!(child, DocumentNode::Element(element) if element.tag == "em") {
+                render_feature_hero_accent(child, article_headings)
+            } else {
+                render_document_node_with_article_headings(
+                    child,
+                    article_headings,
+                    Some(GlitchProfile::PostTitle),
+                )
+            }
+        })}</strong>
+    }
+}
+
+fn render_feature_hero_accent(node: &DocumentNode, article_headings: bool) -> Html {
+    let DocumentNode::Element(accent) = node else {
+        return Html::default();
+    };
+    html! {
+        <em>{for accent.children.iter().map(|child| {
+            render_document_node_with_article_headings(
+                child,
+                article_headings,
+                Some(GlitchProfile::PostTitleAccent),
+            )
+        })}</em>
     }
 }
 

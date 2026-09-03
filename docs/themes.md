@@ -34,6 +34,18 @@ Page styles remain parameters passed into the selected theme. They provide the
 accent, two chromatic channels, background, foreground, and light/dark scheme.
 They do not select a different theme for an individual page.
 
+## Post titles
+
+The Bresilla theme presents every post title as a wide editorial heading. The
+last whitespace-delimited word uses the page's accessible accent color while
+the preceding words retain the foreground color. Both parts use the shared
+scramble renderer, but the accent word decodes for longer, glitches more often,
+and displaces its chromatic channels farther.
+
+Single-word titles render entirely in the accent treatment. Reduced-motion
+visitors receive the same size and color hierarchy without animation. Authors
+only set the ordinary front-matter `title`; no per-post markup is required.
+
 ## Theme module
 
 Theme implementations live in `crates/faqe-cli/src/theme/`. A definition

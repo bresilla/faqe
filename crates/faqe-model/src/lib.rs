@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub const SITE_SCHEMA_VERSION: u32 = 5;
+pub const SITE_SCHEMA_VERSION: u32 = 7;
 pub const DEFAULT_THEME_ID: &str = "bresilla";
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -191,6 +191,11 @@ pub enum ElementKind {
     SideNote,
     SideImage,
     ReadingBreak,
+    Graph,
+    Timeline,
+    Progress,
+    DataGrid,
+    Feature,
     Slide,
     #[default]
     AllowedHtml,

@@ -149,6 +149,286 @@ explicit node tree and rendered through typed elements, attributes, text, and
 raw nested-Markdown fragments. Text and attribute values are escaped only by
 the structural serializer.
 
+## Rich Markdown primitives
+
+FAQE extends fenced code blocks with typed, declarative visual primitives. A
+primitive uses `faqe:<name>` as its info string and TOML as its body. Ordinary
+renderers keep showing a readable code block, while FAQE validates the TOML and
+renders semantic HTML in both the generated shell and the WASM view.
+
+Posts and presentations use the same primitive pipeline. Standard fenced code
+blocks are the built-in `code-block` primitive; `faqe:*` fences select a typed
+declarative primitive instead. Presenterm slide boundaries, pauses, columns,
+and fragments wrap the resulting document nodes without replacing them.
+
+Primitive text fields accept inline Markdown. Unknown fields, invalid enum
+values, missing references, non-rectangular tables, and values outside declared
+ranges fail the content build instead of producing a partly rendered widget.
+The current registry contains `hero`, `prose`, `graph`, `timeline`, `progress`,
+`grid`, and `table`.
+
+### Feature hero
+
+Use `hero` when a long-form post needs an editorial title block, visual, and
+compact fact strip. A hero requires `title`, accepts `eyebrow`, `standfirst`,
+and optional image fields, and may contain up to eight stats. `image` and
+`image_alt` must be provided together; `image_caption` accepts inline Markdown.
+
+````markdown
+```faqe:hero
+eyebrow = "Research dossier · 12 source files"
+title = "The Balthasar Evidence Chain"
+standfirst = "How a statement becomes durable memory."
+image = "balthasar-hero.jpg"
+image_alt = "Glowing fragments suspended in a dark room"
+image_caption = "Photo by [Johnny Guitar](https://unsplash.com/@johnnyguitarks)"
+
+[[stats]]
+label = "Witnesses"
+value = "8"
+
+[[stats]]
+label = "Promotion threshold"
+value = "0.50"
+```
+````
+
+The hero activates the theme's wide feature layout for that post while keeping
+the site's configured pixel-font stack. It does not accept custom HTML, CSS, or
+scripts.
+
+### Prose columns
+
+`prose` lays out two to four Markdown blocks as editorial columns. Each entry
+accepts block Markdown and must be non-empty.
+
+````markdown
+```faqe:prose
+columns = [
+  "A transcript records **what happened**.",
+  "A project database records **what remains true**."
+]
+```
+````
+
+### Graph
+
+Graphs use an explicit grid so a complex architecture diagram stays
+deterministic without a browser layout engine. Coordinates are one-based.
+Nodes require unique ASCII IDs; edges must name existing nodes. Groups are
+optional visual regions. `tone` accepts `accent`, `positive`, `warning`,
+`negative`, `muted`, or `neutral`.
+
+````markdown
+```faqe:graph
+title = "Everything, connected"
+caption = "Solid lines happen live; dashed lines happen between sessions."
+description = "A harness writes turns which are promoted into durable memory."
+columns = 3
+rows = 2
+
+[[groups]]
+label = "LIVE"
+column = 1
+row = 1
+width = 2
+height = 2
+
+[[nodes]]
+id = "harness"
+title = "agent / harness"
+subtitle = "anything that can observe"
+column = 1
+row = 1
+tone = "accent"
+
+[[nodes]]
+id = "transcript"
+title = "transcript.db"
+subtitle = "turns, verbatim"
+column = 2
+row = 1
+tone = "neutral"
+
+[[nodes]]
+id = "project"
+title = "project.db"
+subtitle = "durable facts"
+column = 3
+row = 2
+tone = "positive"
+
+[[edges]]
+from = "harness"
+to = "transcript"
+label = "observe"
+
+[[edges]]
+from = "transcript"
+to = "project"
+label = "promote"
+dashed = true
+tone = "warning"
+```
+````
+
+A graph may have up to 12 columns, 12 rows, 64 nodes, and 128 edges. Only one
+node may occupy a cell. Authors control topology and grouping; FAQE controls
+geometry, responsive overflow, colors, arrow rendering, and the accessible
+text equivalent.
+
+### Timeline
+
+````markdown
+```faqe:timeline
+title = "What happens to one turn"
+caption = "Most sentences stop at the third station."
+
+[[items]]
+title = "The harness calls `observe`"
+meta = "transcript.db · turn"
+body = "The durable transcript write happens first."
+tone = "positive"
+
+[[items]]
+title = "The claim waits for evidence"
+meta = "hold 0.30"
+body = "Waiting and refusal remain different states."
+tone = "warning"
+
+[[items]]
+title = "The claim becomes assertable"
+meta = "inject 0.35"
+tone = "accent"
+```
+````
+
+Timeline items require `title`; `meta`, `body`, and `tone` are optional. The
+result is an ordered list, so its order and meaning survive CSS, printing, and
+non-visual browsing.
+
+### Progress and threshold charts
+
+````markdown
+```faqe:progress
+title = "Witness weights"
+caption = "Some witnesses cross alone; others wait."
+max = 1.0
+
+[[items]]
+label = "SAID"
+value = 1.0
+display = "1.00"
+text = "the person asked to remember it"
+tone = "positive"
+
+[[items]]
+label = "TIDE"
+value = 0.30
+display = "0.30"
+text = "it left the context window"
+tone = "warning"
+
+[[markers]]
+label = "hold 0.30"
+value = 0.30
+tone = "warning"
+
+[[markers]]
+label = "promote 0.50"
+value = 0.50
+tone = "positive"
+```
+````
+
+`max` defaults to `100`. Every item and marker value must be finite and within
+`0..max`. Each bar carries native progressbar roles and numeric ARIA values;
+`display` changes only the visible number.
+
+### Card and metric grids
+
+````markdown
+```faqe:grid
+title = "Every way in"
+columns = 3
+variant = "cards"
+
+[[items]]
+eyebrow = "remember"
+title = "Somebody typed it"
+body = "Direct intent is the strongest evidence."
+badge = "crosses alone"
+tone = "positive"
+
+[[items]]
+eyebrow = "consolidate"
+title = "Two runs agreed"
+body = "Independent repetition becomes evidence."
+badge = "waits"
+tone = "warning"
+```
+````
+
+Grid variants are `cards`, `metrics`, `compact`, and `strip`; `columns` is
+between one and six and collapses to one column on narrow screens. An item may
+also contain `bullets = ["..."]` and structured `[[items.lines]]` entries with
+`label`, `value`, and optional `meta` and `tone` fields. Lines render as a
+definition list for measurement and benchmark cards.
+
+### Typed tables
+
+Standard Markdown tables remain the shortest choice for ordinary data. The
+typed table primitive adds presentation variants and per-cell status tones.
+Variants are `plain`, `striped`, `comparison`, `matrix`, and `metrics`.
+
+````markdown
+```faqe:table
+title = "balthasar and mem0"
+caption = "The first cell in every row is emitted as its row header."
+variant = "comparison"
+columns = ["Axis", "mem0", "balthasar"]
+
+[[rows]]
+cells = ["History", "Current state", "Validity intervals"]
+tones = ["neutral", "negative", "positive"]
+
+[[rows]]
+cells = ["Recall", "Vector search", "Memory plus verbatim spans"]
+tones = ["neutral", "neutral", "positive"]
+```
+````
+
+Rows must match the declared column count. `tones` may be omitted or must have
+one entry per cell. The first cell is a semantic row header, while every
+declared column becomes a column header.
+
+### Adding the next primitive
+
+Primitive implementations live together under
+`crates/faqe-content/src/primitives/`:
+
+- `mod.rs` owns the shared fenced-block entry point.
+- `code_block.rs` owns ordinary fenced code and syntax highlighting.
+- `declarative.rs` owns the strict `faqe:*` registry and data renderers.
+- `kind.rs` classifies standard Markdown, shortcode, and declarative output as
+  typed document elements shared by posts and presentations.
+
+Rich primitives are a registry rather than more shortcode branches. A new
+declarative primitive has four explicit integration points:
+
+1. Add its strict TOML data structs and renderer to
+   `crates/faqe-content/src/primitives/declarative.rs`, then register one
+   `PrimitiveSpec`.
+2. Emit one semantic root carrying `data-faqe-primitive="<name>"`; do not emit
+   scripts, event handlers, or arbitrary author CSS.
+3. Classify the root with a matching `ElementKind` in `faqe-model`, bump the
+   site schema, and add theme-owned responsive and print CSS.
+4. Document the contract and add validation plus semantic-output tests.
+
+This boundary keeps authoring data-only, keeps rendering deterministic and
+offline, and lets future primitives share the existing sanitizer, typed JSON
+document, semantic fallback, WASM renderer, and theme system.
+
 ## Presentations
 
 Presentation items follow Presenterm's source contract so the same `.md` file

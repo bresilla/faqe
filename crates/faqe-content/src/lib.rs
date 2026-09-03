@@ -1,3 +1,4 @@
+mod primitives;
 mod shortcode;
 
 use std::cell::RefCell;
@@ -5,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::OnceLock;
 
 use ammonia::{Builder as HtmlSanitizer, UrlRelative};
 use chrono::NaiveDate;
@@ -22,9 +22,9 @@ use html5ever::tokenizer::{
 use pulldown_cmark::{html, CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
 use regex::{Captures, Regex};
 use sha2::{Digest, Sha256};
-use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 use unicode_normalization::UnicodeNormalization;
 
+pub use primitives::PrimitiveError;
 pub use shortcode::{ShortcodeError, ShortcodeParser};
 
 /// Build the ownership key used for routes and emitted paths. NFC prevents
@@ -51,6 +51,7 @@ const LEGACY_LOGO_BODY_SHA256: &str =
 const SAFE_HTML_TAGS: &[&str] = &[
     "a",
     "abbr",
+    "article",
     "aside",
     "blockquote",
     "br",
@@ -68,6 +69,7 @@ const SAFE_HTML_TAGS: &[&str] = &[
     "figcaption",
     "figure",
     "g",
+    "header",
     "h1",
     "h2",
     "h3",
@@ -105,6 +107,7 @@ const SAFE_HTML_TAGS: &[&str] = &[
     "th",
     "thead",
     "title",
+    "text",
     "tr",
     "u",
     "ul",
@@ -126,6 +129,10 @@ pub enum ContentError {
     Shortcode {
         path: PathBuf,
         source: ShortcodeError,
+    },
+    Primitive {
+        path: PathBuf,
+        source: PrimitiveError,
     },
     RouteCollision {
         route: String,
@@ -156,6 +163,7 @@ impl fmt::Display for ContentError {
                 )
             }
             Self::Shortcode { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::Primitive { path, source } => write!(formatter, "{}: {source}", path.display()),
             Self::RouteCollision {
                 route,
                 first,
@@ -1341,9 +1349,10 @@ fn parse_page(
             path: relative_path.to_owned(),
             source,
         })?;
-    let (body_html, table_of_contents) = markdown_to_html_resolving(&expanded, |url| {
-        resolve_asset_url(content_root, relative_path, url, assets)
-    })?;
+    let (body_html, table_of_contents) =
+        markdown_to_html_resolving(relative_path, &expanded, |url| {
+            resolve_asset_url(content_root, relative_path, url, assets)
+        })?;
     let body_html = sanitize_legacy_html(&body_html);
     let word_count = visible_word_count(&body_html);
     let thumbnail = string(table, "thumbnail")
@@ -2254,7 +2263,7 @@ fn presenterm_markdown_document(
 ) -> Result<Document, ContentError> {
     validate_active_html(context.page_path, markdown)?;
     validate_supported_html(context.page_path, markdown)?;
-    let (html, _) = markdown_to_html_resolving(markdown, |url| {
+    let (html, _) = markdown_to_html_resolving(context.page_path, markdown, |url| {
         resolve_asset_url(context.content_root, context.page_path, url, context.assets)
     })?;
     let mut document = document_from_sanitized_html(&sanitize_legacy_html(&html));
@@ -2756,11 +2765,20 @@ fn validate_public_url(path: &Path, value: &str, allow_relative: bool) -> Result
 }
 
 fn markdown_to_html(markdown: &str) -> (String, Vec<TocItem>) {
-    markdown_to_html_resolving(markdown, |url| Ok::<_, ContentError>(url.to_owned()))
+    markdown_to_html_impl(None, markdown, |url| Ok::<_, ContentError>(url.to_owned()))
         .expect("default URL resolver cannot fail")
 }
 
 fn markdown_to_html_resolving(
+    path: &Path,
+    markdown: &str,
+    resolve: impl FnMut(&str) -> Result<String, ContentError>,
+) -> Result<(String, Vec<TocItem>), ContentError> {
+    markdown_to_html_impl(Some(path), markdown, resolve)
+}
+
+fn markdown_to_html_impl(
+    path: Option<&Path>,
     markdown: &str,
     mut resolve: impl FnMut(&str) -> Result<String, ContentError>,
 ) -> Result<(String, Vec<TocItem>), ContentError> {
@@ -2789,9 +2807,18 @@ fn markdown_to_html_resolving(
                         _ => {}
                     }
                 }
-                events.push(Event::Html(CowStr::Boxed(
-                    highlighted_code_block(&language, &source).into_boxed_str(),
-                )));
+                let rendered = if path.is_some() {
+                    primitives::render_fenced(&language, &source).map_err(|source| {
+                        ContentError::Primitive {
+                            path: path.expect("primitive path is present").to_owned(),
+                            source,
+                        }
+                    })?
+                } else {
+                    primitives::render_code_block(&language, &source)
+                };
+                let rendered = rewrite_html_asset_attributes(&rendered, &mut resolve)?;
+                events.push(Event::Html(CowStr::Boxed(rendered.into_boxed_str())));
             }
             Event::Start(Tag::Link {
                 link_type,
@@ -2882,178 +2909,6 @@ fn goldmark_heading_id(title: &str) -> String {
         .collect()
 }
 
-const TREE_SITTER_HIGHLIGHTS: &[&str] = &[
-    "attribute",
-    "boolean",
-    "comment",
-    "constant",
-    "constant.builtin",
-    "constructor",
-    "embedded",
-    "escape",
-    "function",
-    "function.builtin",
-    "keyword",
-    "module",
-    "number",
-    "operator",
-    "property",
-    "property.builtin",
-    "punctuation",
-    "punctuation.bracket",
-    "punctuation.delimiter",
-    "punctuation.special",
-    "string",
-    "string.special",
-    "string.special.key",
-    "tag",
-    "type",
-    "type.builtin",
-    "variable",
-    "variable.builtin",
-    "variable.parameter",
-];
-
-thread_local! {
-    static TREE_SITTER_HIGHLIGHTER: RefCell<Highlighter> = RefCell::new(Highlighter::new());
-}
-
-#[derive(Clone, Copy)]
-enum HighlightLanguage {
-    Bash,
-    Json,
-    Toml,
-}
-
-fn highlight_language(language: &str) -> Option<HighlightLanguage> {
-    match language.trim().to_ascii_lowercase().as_str() {
-        "bash" | "console" | "sh" | "shell" | "zsh" => Some(HighlightLanguage::Bash),
-        "json" => Some(HighlightLanguage::Json),
-        "toml" => Some(HighlightLanguage::Toml),
-        _ => None,
-    }
-}
-
-fn bash_highlight_configuration() -> &'static HighlightConfiguration {
-    static CONFIGURATION: OnceLock<HighlightConfiguration> = OnceLock::new();
-    CONFIGURATION.get_or_init(|| {
-        let mut configuration = HighlightConfiguration::new(
-            tree_sitter_bash::LANGUAGE.into(),
-            "bash",
-            tree_sitter_bash::HIGHLIGHT_QUERY,
-            "",
-            "",
-        )
-        .expect("bundled Bash highlight query must compile");
-        configuration.configure(TREE_SITTER_HIGHLIGHTS);
-        configuration
-    })
-}
-
-fn json_highlight_configuration() -> &'static HighlightConfiguration {
-    static CONFIGURATION: OnceLock<HighlightConfiguration> = OnceLock::new();
-    CONFIGURATION.get_or_init(|| {
-        let mut configuration = HighlightConfiguration::new(
-            tree_sitter_json::LANGUAGE.into(),
-            "json",
-            tree_sitter_json::HIGHLIGHTS_QUERY,
-            "",
-            "",
-        )
-        .expect("bundled JSON highlight query must compile");
-        configuration.configure(TREE_SITTER_HIGHLIGHTS);
-        configuration
-    })
-}
-
-fn toml_highlight_configuration() -> &'static HighlightConfiguration {
-    static CONFIGURATION: OnceLock<HighlightConfiguration> = OnceLock::new();
-    CONFIGURATION.get_or_init(|| {
-        let mut configuration = HighlightConfiguration::new(
-            tree_sitter_toml_ng::LANGUAGE.into(),
-            "toml",
-            tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
-            "",
-            "",
-        )
-        .expect("bundled TOML highlight query must compile");
-        configuration.configure(TREE_SITTER_HIGHLIGHTS);
-        configuration
-    })
-}
-
-fn highlight_configuration(language: HighlightLanguage) -> &'static HighlightConfiguration {
-    match language {
-        HighlightLanguage::Bash => bash_highlight_configuration(),
-        HighlightLanguage::Json => json_highlight_configuration(),
-        HighlightLanguage::Toml => toml_highlight_configuration(),
-    }
-}
-
-fn tree_sitter_highlight(language: HighlightLanguage, source: &str) -> Option<String> {
-    TREE_SITTER_HIGHLIGHTER.with(|highlighter| {
-        let mut highlighter = highlighter.try_borrow_mut().ok()?;
-        let events = highlighter
-            .highlight(
-                highlight_configuration(language),
-                source.as_bytes(),
-                None,
-                |_| None,
-            )
-            .ok()?;
-        let mut highlighted = String::with_capacity(source.len() + source.len() / 2);
-        for event in events {
-            match event.ok()? {
-                HighlightEvent::Source { start, end } => {
-                    highlighted.push_str(&escape_html(source.get(start..end)?));
-                }
-                HighlightEvent::HighlightStart(highlight) => {
-                    let class = TREE_SITTER_HIGHLIGHTS.get(highlight.0)?.replace('.', "-");
-                    highlighted.push_str("<span class=\"ts-");
-                    highlighted.push_str(&class);
-                    highlighted.push_str("\">");
-                }
-                HighlightEvent::HighlightEnd => highlighted.push_str("</span>"),
-            }
-        }
-        Some(highlighted)
-    })
-}
-
-fn highlighted_code_block(language: &str, source: &str) -> String {
-    let syntax = highlight_language(language);
-    let highlighted = syntax
-        .and_then(|syntax| tree_sitter_highlight(syntax, source))
-        .unwrap_or_else(|| escape_html(source));
-    let language = escape_attribute(language);
-    let label = if language.is_empty() {
-        "TEXT"
-    } else {
-        language.as_str()
-    };
-    let engine = if syntax.is_some() {
-        "TREE-SITTER"
-    } else {
-        "PLAIN"
-    };
-    format!(
-        "<div class=\"highlight ts-highlight\" data-highlighter=\"{engine}\"><div class=\"code-toolbar\" aria-hidden=\"true\"><span class=\"code-language\">{label}</span><span class=\"code-engine\">{engine}</span></div><pre tabindex=\"0\" class=\"chroma\"><code class=\"language-{language}\" data-lang=\"{language}\">{highlighted}</code></pre></div>"
-    )
-}
-
-fn escape_html(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
-
-fn escape_attribute(value: &str) -> String {
-    escape_html(value)
-}
-
 fn visible_word_count(html: &str) -> usize {
     let tags = Regex::new(r"(?s)<[^>]*>").expect("valid tag regex");
     tags.replace_all(html, " ").split_whitespace().count()
@@ -3076,6 +2931,17 @@ fn sanitize_legacy_html(html: &str) -> String {
         "--faqe-image-border",
         "--faqe-image-radius",
         "--faqe-image-width",
+        "--faqe-graph-column",
+        "--faqe-graph-columns",
+        "--faqe-graph-height",
+        "--faqe-graph-min-width",
+        "--faqe-graph-ratio",
+        "--faqe-graph-row",
+        "--faqe-graph-rows",
+        "--faqe-graph-width",
+        "--faqe-grid-columns",
+        "--faqe-progress-marker",
+        "--faqe-progress-value",
         "background-color",
         "border",
         "border-radius",
@@ -3150,6 +3016,7 @@ fn sanitize_legacy_html(html: &str) -> String {
             "path",
             &["d", "fill", "fill-rule", "stroke", "stroke-width"],
         )
+        .add_tag_attributes("text", &["text-anchor", "x", "y"])
         .add_tag_attributes("td", &["align", "colspan", "headers", "rowspan"])
         .add_tag_attributes("th", &["align", "colspan", "headers", "rowspan", "scope"]);
     sanitizer.clean(&html).to_string()
@@ -3192,7 +3059,7 @@ impl TokenSink for DocumentSink {
                     })
                     .collect::<BTreeMap<_, _>>();
                 let element = ElementNode {
-                    kind: classify_element(&tag_name, &attributes),
+                    kind: primitives::classify_element(&tag_name, &attributes),
                     tag: tag_name.clone(),
                     attributes,
                     children: Vec::new(),
@@ -3339,45 +3206,6 @@ fn is_void_element(tag: &str) -> bool {
         tag,
         "br" | "col" | "hr" | "img" | "input" | "source" | "wbr"
     )
-}
-
-fn classify_element(tag: &str, attributes: &BTreeMap<String, String>) -> ElementKind {
-    let has_class = |name: &str| {
-        attributes
-            .get("class")
-            .is_some_and(|classes| classes.split_whitespace().any(|class| class == name))
-    };
-    if has_class("btn") {
-        ElementKind::Button
-    } else if has_class("command") || has_class("commandframeholder") {
-        ElementKind::Command
-    } else if has_class("textframeholder") || has_class("tipframeholder") {
-        ElementKind::Callout
-    } else if has_class("hideframeholder") || tag == "details" || tag == "summary" {
-        ElementKind::Disclosure
-    } else if has_class("sidenote") || has_class("sidenote-number") {
-        ElementKind::SideNote
-    } else if has_class("marginnote") {
-        ElementKind::SideImage
-    } else if has_class("progress_hr") {
-        ElementKind::ReadingBreak
-    } else if attributes.contains_key("data-shortcode-slide")
-        || attributes.contains_key("data-shortcode-section")
-    {
-        ElementKind::Slide
-    } else {
-        match tag {
-            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => ElementKind::Heading,
-            "p" => ElementKind::Paragraph,
-            "ol" | "ul" | "li" | "dl" | "dt" | "dd" => ElementKind::List,
-            "blockquote" | "q" | "aside" => ElementKind::Quote,
-            "pre" | "code" => ElementKind::CodeBlock,
-            "table" | "caption" | "colgroup" | "col" | "thead" | "tbody" | "tfoot" | "tr"
-            | "th" | "td" => ElementKind::Table,
-            "img" | "figure" | "figcaption" => ElementKind::Image,
-            _ => ElementKind::AllowedHtml,
-        }
-    }
 }
 
 fn validate_active_html(path: &Path, source: &str) -> Result<(), ContentError> {
@@ -3571,4 +3399,144 @@ fn decode_basic_entities(value: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
+}
+
+#[cfg(test)]
+mod primitive_document_tests {
+    use super::*;
+
+    #[test]
+    fn primitive_fences_survive_the_document_pipeline() {
+        let markdown = r#"
+```faqe:hero
+eyebrow = "Research dossier"
+title = "The **Evidence Chain**"
+standfirst = "A complete audit."
+[[stats]]
+label = "Files"
+value = "12"
+```
+
+```faqe:prose
+columns = [
+  "The first **column**.",
+  "The second column."
+]
+```
+
+```faqe:graph
+columns = 2
+rows = 1
+[[nodes]]
+id = "a"
+title = "A"
+column = 1
+row = 1
+[[nodes]]
+id = "b"
+title = "B"
+column = 2
+row = 1
+[[edges]]
+from = "a"
+to = "b"
+label = "flows"
+```
+
+```faqe:timeline
+[[items]]
+title = "First"
+```
+
+```faqe:progress
+[[items]]
+label = "Complete"
+value = 75
+```
+
+```faqe:grid
+[[items]]
+title = "Card"
+```
+
+```faqe:table
+columns = ["Key", "Value"]
+[[rows]]
+cells = ["Answer", "42"]
+```
+"#;
+        let (html, _) =
+            markdown_to_html_resolving(Path::new("post.md"), markdown, |url| Ok(url.to_owned()))
+                .unwrap();
+        let sanitized = sanitize_legacy_html(&html);
+        assert!(sanitized.contains("<path"));
+        assert!(sanitized.contains("<text"));
+        assert!(sanitized.contains("--faqe-progress-value:75.0%"));
+
+        let document = document_from_sanitized_html(&sanitized);
+        let kinds = document
+            .nodes
+            .iter()
+            .filter_map(|node| match node {
+                DocumentNode::Element(element) => Some(element.kind),
+                DocumentNode::Text { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(kinds.contains(&ElementKind::Graph));
+        assert!(kinds.contains(&ElementKind::Timeline));
+        assert!(kinds.contains(&ElementKind::Progress));
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|kind| **kind == ElementKind::Feature)
+                .count(),
+            2
+        );
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|kind| **kind == ElementKind::DataGrid)
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn presentations_use_the_shared_primitive_pipeline() {
+        let source = r#"
+# Shared primitives
+
+```faqe:progress
+[[items]]
+label = "Complete"
+value = 80
+```
+
+```rust
+fn main() {}
+```
+"#;
+        let mut assets = BTreeMap::new();
+        let mut context = TalkParseContext {
+            content_root: Path::new("."),
+            page_path: Path::new("talks/shared.md"),
+            assets: &mut assets,
+        };
+        let front_matter = serde_yaml::from_str("{}").unwrap();
+        let deck = parse_talk(source, &front_matter, &mut context).unwrap();
+        let mut kinds = Vec::new();
+        collect_element_kinds(&deck.slides[0].document.nodes, &mut kinds);
+
+        assert!(kinds.contains(&ElementKind::Progress));
+        assert!(kinds.contains(&ElementKind::CodeBlock));
+    }
+
+    fn collect_element_kinds(nodes: &[DocumentNode], kinds: &mut Vec<ElementKind>) {
+        for node in nodes {
+            if let DocumentNode::Element(element) = node {
+                kinds.push(element.kind);
+                collect_element_kinds(&element.children, kinds);
+            }
+        }
+    }
 }
