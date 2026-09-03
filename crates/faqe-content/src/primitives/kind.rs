@@ -16,10 +16,6 @@ pub fn classify_element(tag: &str, attributes: &BTreeMap<String, String>) -> Ele
         ElementKind::Callout
     } else if has_class("hideframeholder") || tag == "details" || tag == "summary" {
         ElementKind::Disclosure
-    } else if has_class("sidenote") || has_class("sidenote-number") {
-        ElementKind::SideNote
-    } else if has_class("marginnote") {
-        ElementKind::SideImage
     } else if has_class("progress_hr") {
         ElementKind::ReadingBreak
     } else if primitive_is(attributes, "graph") {

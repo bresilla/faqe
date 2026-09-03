@@ -188,8 +188,6 @@ pub enum ElementKind {
     Command,
     Callout,
     Disclosure,
-    SideNote,
-    SideImage,
     ReadingBreak,
     Graph,
     Timeline,

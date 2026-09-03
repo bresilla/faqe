@@ -2879,12 +2879,15 @@ fn talk_page(props: &TalkPageProps) -> Html {
         >
             <h1 class="faqe-visually-hidden">{&props.page.title}</h1>
             <div class="line top"></div><div class="line bottom"></div><div class="line left"></div><div class="line right"></div>
-            <div class="faqe-talk-canvas-title" aria-hidden="true">{&props.page.title}</div>
+            <div class="faqe-talk-canvas-title" aria-hidden="true">
+                <span class="faqe-talk-chrome-ink">{&props.page.title}</span>
+            </div>
             <div class="faqe-talk-canvas-meta">
-                <span>{canvas_author}</span>
+                <span class="faqe-talk-chrome-ink">{canvas_author}</span>
                 <label class="faqe-talk-canvas-count">
                     <span class="faqe-visually-hidden">{"Go to slide"}</span>
                     <input
+                        class="faqe-talk-chrome-ink"
                         type="number"
                         min="1"
                         max={slide_total.to_string()}
@@ -2894,7 +2897,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
                         onchange={jump_to_slide_change}
                         onkeydown={jump_to_slide_key}
                     />
-                    <span>{format!(" / {slide_total:02}")}</span>
+                    <span class="faqe-talk-chrome-ink">{format!(" / {slide_total:02}")}</span>
                 </label>
             </div>
             <div class="faqe-slide-background" style={background_style} aria-hidden="true"></div>

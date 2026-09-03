@@ -52,7 +52,7 @@ impl ShortcodeParser {
     pub fn render(&self, source: &str) -> Result<String, ShortcodeError> {
         let nodes = parse(source)?;
         let mut output = String::with_capacity(source.len());
-        let mut state = RenderState::default();
+        let mut state = RenderState;
         for node in &nodes {
             render_node(node, &mut output, &mut state)?;
         }
@@ -60,17 +60,13 @@ impl ShortcodeParser {
     }
 }
 
-#[derive(Default)]
-struct RenderState {
-    disclosure: usize,
-}
+struct RenderState;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Markup {
     Raw(String),
     Text(String),
     Element(Element),
-    Sequence(Vec<Markup>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,11 +97,6 @@ impl Markup {
             Self::Raw(value) => output.push_str(value),
             Self::Text(value) => output.push_str(&escape_html(value)),
             Self::Element(element) => element.write_to(output),
-            Self::Sequence(children) => {
-                for child in children {
-                    child.write_to(output);
-                }
-            }
         }
     }
 }
@@ -382,10 +373,7 @@ fn render_node(
     };
 
     let inner = render_children(children, state)?;
-    let block = is_block_level(name);
-    if block {
-        begin_block(output);
-    }
+    begin_block(output);
     let markup = match name.as_str() {
         "button" => {
             let url = args.named.get("url").map(String::as_str).unwrap_or("#");
@@ -517,61 +505,6 @@ fn render_node(
                 )
                 .into()
         }
-        "sidenote" => {
-            state.disclosure += 1;
-            let id = format!("sn-faqe-{}", state.disclosure);
-            let body = if let Some(link) = args.named.get("link") {
-                Element::new("a")
-                    .attr("href", link)
-                    .child(Markup::raw(inner))
-                    .into()
-            } else {
-                Markup::raw(inner)
-            };
-            Markup::Sequence(vec![
-                Element::new("label")
-                    .attr("for", &id)
-                    .attr("class", "margin-toggle sidenote-number")
-                    .attr("aria-label", "Toggle sidenote")
-                    .into(),
-                Element::void("input")
-                    .attr("type", "checkbox")
-                    .attr("id", &id)
-                    .attr("class", "margin-toggle")
-                    .attr("aria-label", "Toggle sidenote")
-                    .into(),
-                Element::new("span")
-                    .attr("class", "sidenote")
-                    .child(body)
-                    .into(),
-            ])
-        }
-        "sideimage" => {
-            state.disclosure += 1;
-            let id = format!("mn-faqe-{}", state.disclosure);
-            let url = args.named.get("url").map(String::as_str).unwrap_or("");
-            Markup::Sequence(vec![
-                Element::new("label")
-                    .attr("for", &id)
-                    .attr("class", "margin-toggle")
-                    .attr("aria-label", "Toggle margin image")
-                    .child(Markup::text("⊕"))
-                    .into(),
-                Element::void("input")
-                    .attr("type", "checkbox")
-                    .attr("id", &id)
-                    .attr("class", "margin-toggle")
-                    .attr("aria-label", "Toggle margin image")
-                    .into(),
-                Element::new("span")
-                    .attr("class", "marginnote")
-                    .children([
-                        Element::void("img").attr("src", url).attr("alt", "").into(),
-                        Markup::raw(inner),
-                    ])
-                    .into(),
-            ])
-        }
         "section" => Element::new("section")
             .boolean_attr("data-shortcode-section")
             .child(Markup::raw(inner))
@@ -629,14 +562,8 @@ fn render_node(
         }
     };
     markup.write_to(output);
-    if block {
-        end_block(output);
-    }
+    end_block(output);
     Ok(())
-}
-
-fn is_block_level(name: &str) -> bool {
-    !matches!(name, "sidenote" | "sideimage")
 }
 
 fn begin_block(output: &mut String) {
@@ -698,4 +625,20 @@ fn escape_html(value: &str) -> String {
 
 fn escape_attribute(value: &str) -> String {
     escape_html(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ShortcodeParser;
+
+    #[test]
+    fn removed_margin_shortcodes_are_rejected() {
+        let parser = ShortcodeParser;
+        assert!(parser
+            .render("{{< sidenote >}}note{{< /sidenote >}}")
+            .is_err());
+        assert!(parser
+            .render("{{< sideimage url=\"/image.png\" >}}caption{{< /sideimage >}}")
+            .is_err());
+    }
 }
