@@ -103,6 +103,26 @@ const STYLE: &str = r#"
 .faqe-talk[data-faqe-talk-template="wur"] .faqe-primitive{font-family:Verdana,Arial,sans-serif}
 .faqe-talk[data-faqe-talk-template="wur"] .faqe-graph-canvas{max-height:270px}
 
+/* Data primitives at slide scale */
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-primitive:not(.faqe-graph){font-size:14px;margin:6px 0 10px}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-primitive:not(.faqe-graph) *{font-family:Verdana,Arial,sans-serif}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-primitive-caption>strong{font-size:14px;letter-spacing:0}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-primitive-caption>span{font-size:12px}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-grid-item>small{font-size:10.5px;letter-spacing:.08em}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-grid-item>strong{font-size:16px;line-height:1.25}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-grid-items.variant-metrics .faqe-grid-item>strong{font-size:17px}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-grid-item>div,.faqe-talk[data-faqe-talk-template="wur"] .faqe-grid-bullets{font-size:13.5px;line-height:1.4}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-grid-item>span{font-size:11px}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-timeline-content>strong{font-size:15px;line-height:1.25}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-timeline-content>small{font-size:11.5px}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-timeline-content>div{font-size:13px}
+.faqe-talk[data-faqe-talk-template="wur"] :is(.faqe-progress-label,.faqe-progress-value){font-size:13px;white-space:nowrap}
+.faqe-talk[data-faqe-talk-template="wur"] :is(.faqe-progress-bar,.faqe-progress-marker){font-size:11px}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-data-table table{font-size:13.5px}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-data-table thead th{font-size:12px;letter-spacing:.02em}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-data-table caption{font-size:12px}
+.faqe-talk[data-faqe-talk-template="wur"] .faqe-data-table :is(th,td){padding:7px 10px}
+
 /* Full-slide image */
 .faqe-talk[data-faqe-talk-template="wur"] .slides>section.image-only{padding:0}
 .faqe-talk[data-faqe-talk-template="wur"] .slides>section.image-only>p{height:100%}
