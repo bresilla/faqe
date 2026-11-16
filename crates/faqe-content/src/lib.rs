@@ -2546,6 +2546,11 @@ fn normalize_presenterm_media(nodes: &mut [DocumentNode]) {
                         element.attributes.insert("alt".into(), String::new());
                     }
                 }
+            } else if let Some(value) = alt.strip_prefix("image:footer") {
+                let class = element.attributes.entry("class".into()).or_default();
+                class.push_str(if class.is_empty() { "faqe-footer-image" } else { " faqe-footer-image" });
+                let label = value.trim_start_matches(':').trim().to_string();
+                element.attributes.insert("alt".into(), label);
             }
         }
     }
@@ -3521,6 +3526,22 @@ fn decode_basic_entities(value: &str) -> String {
 #[cfg(test)]
 mod primitive_document_tests {
     use super::*;
+
+    #[test]
+    fn footer_images_are_marked_and_keep_their_label() {
+        let mut nodes = vec![DocumentNode::Element(ElementNode {
+            kind: ElementKind::default(),
+            tag: "img".into(),
+            attributes: [("alt".to_string(), "image:footer: Part 1 of 2".to_string())].into(),
+            children: Vec::new(),
+        })];
+        normalize_presenterm_media(&mut nodes);
+        let DocumentNode::Element(image) = &nodes[0] else {
+            panic!("expected an element");
+        };
+        assert_eq!(image.attributes.get("class").map(String::as_str), Some("faqe-footer-image"));
+        assert_eq!(image.attributes.get("alt").map(String::as_str), Some("Part 1 of 2"));
+    }
 
     #[test]
     fn primitive_fences_survive_the_document_pipeline() {

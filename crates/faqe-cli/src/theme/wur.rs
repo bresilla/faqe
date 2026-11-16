@@ -137,6 +137,8 @@ const STYLE: &str = r#"
 /* Footer bar, logo, and slide number */
 .faqe-talk[data-faqe-talk-template="wur"] .slides>section:not(.title-slide):not(.jump-middle):not(.no-footer):not(.image-only)::before{background:url('{{asset:wur-logo-light}}') 14px center/113px 23px no-repeat,var(--wur-green);border:0;border-radius:7px;bottom:6px;content:"";display:block;font-size:0;height:36px;left:20px;opacity:1;pointer-events:none;position:absolute;right:20px;top:auto;z-index:0}
 .faqe-talk[data-faqe-talk-template="wur"] .slides>section:not(.title-slide):not(.jump-middle):not(.no-footer):not(.image-only)::after{bottom:19.5px;color:var(--wur-cream);content:attr(data-faqe-slide-number);font-size:9px;line-height:1;pointer-events:none;position:absolute;right:34px;z-index:1}
+.faqe-talk[data-faqe-talk-template="wur"] .slides>section>p:has(>img.faqe-footer-image:only-child){align-items:center;bottom:6px;display:flex;height:36px;justify-content:center;left:170px;margin:0;position:absolute;right:70px;width:auto;z-index:2}
+.faqe-talk[data-faqe-talk-template="wur"] .slides img.faqe-footer-image{height:26px;max-height:26px;max-width:100%;width:auto}
 
 /* Title designs: wide band, left panel, right panel */
 .faqe-talk[data-faqe-talk-template="wur"] .slides>section:is(.title-slide,.jump-middle){background:#fff var(--faqe-print-background-image,none) center/cover no-repeat;text-align:left}
