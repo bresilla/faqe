@@ -3334,7 +3334,7 @@ fn validate_active_html(path: &Path, source: &str) -> Result<(), ContentError> {
     }
 
     let active = Regex::new(
-        r#"(?is)<\s*/?\s*(?:script|style|iframe|object|embed|template|noscript|meta|link|base|form)\b|\s+on[a-z][a-z0-9_-]*\s*=|(?:href|src)\s*=\s*["']?\s*(?:javascript|vbscript|data|file)\s*:"#,
+        r#"(?is)<\s*/?\s*(?:script|style|iframe|object|embed|template|noscript|meta|link|base|form)\b|<[a-z][^<>]*\s+on[a-z][a-z0-9_-]*\s*=|(?:href|src)\s*=\s*["']?\s*(?:javascript|vbscript|data|file)\s*:"#,
     )
     .expect("valid active HTML regex");
     let Some(found) = active.find(source) else {
@@ -3770,6 +3770,15 @@ date: 2026-11-16
 
         assert_eq!(class(0).as_deref(), Some("image-only"));
         assert_eq!(class(1), None);
+    }
+
+    #[test]
+    fn event_handlers_are_only_detected_inside_tags() {
+        let path = Path::new("talks/example.md");
+        let heading = "Three things at once\n====================\n\nStyle: how components communicate = arrows.\n";
+        assert!(validate_active_html(path, heading).is_ok());
+        assert!(validate_active_html(path, "<div onclick=\"x()\">a</div>").is_err());
+        assert!(validate_active_html(path, "<img\n  src=\"a.png\"\n  onerror = \"x()\">").is_err());
     }
 
     #[test]
