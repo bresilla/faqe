@@ -122,6 +122,11 @@ const STYLE: &str = r#"
 .faqe-talk[data-faqe-talk-template="wur"] .faqe-data-table thead th{font-size:12px;letter-spacing:.02em}
 .faqe-talk[data-faqe-talk-template="wur"] .faqe-data-table caption{font-size:12px}
 .faqe-talk[data-faqe-talk-template="wur"] .faqe-data-table :is(th,td){padding:7px 10px}
+.faqe-talk[data-faqe-talk-template="wur"] pre,.faqe-talk[data-faqe-talk-template="wur"] pre code{font-size:11px;line-height:1.34}
+.faqe-talk[data-faqe-talk-template="wur"] .highlight{flex-shrink:0}
+.faqe-talk[data-faqe-talk-template="wur"] pre{margin:0;padding:8px 12px}
+.faqe-talk[data-faqe-talk-template="wur"] .chroma{max-height:390px}
+.faqe-talk[data-faqe-talk-template="wur"] .code-toolbar{font-size:9px;padding:3px 12px}
 
 /* Full-slide image */
 .faqe-talk[data-faqe-talk-template="wur"] .slides>section.image-only{padding:0}
