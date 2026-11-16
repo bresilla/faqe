@@ -498,6 +498,9 @@ canvas size and its own scoped styling and artwork. `title_layout` is `wide`,
 slide. `title_image` is a sibling-relative image used as the introduction
 slide's background. The introduction slide carries `title-subtitle`,
 `title-date`, and `title-author` paragraphs so templates can place each line.
+Templated talks get a dark scheme toggle: the `D` button under TOOLS, or the
+`D` key, sets `data-faqe-talk-scheme="dark"` on the talk and remembers the
+choice in the browser. Templates style it under that attribute.
 
 ```toml
 # lecture.faqe.toml

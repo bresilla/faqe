@@ -2241,7 +2241,15 @@ fn preferred_viewport_size(visual: Option<(f64, f64)>, layout: (f64, f64)) -> (f
 
 #[cfg(test)]
 mod deck_layout_tests {
-    use super::{deck_zoom_ratio, talk_chrome_fill, talk_location_for_slide_number};
+    use super::{deck_zoom_ratio, talk_action_for_key, talk_chrome_fill, talk_location_for_slide_number, TalkAction};
+
+    #[test]
+    fn d_toggles_the_dark_theme_unless_guarded() {
+        assert_eq!(talk_action_for_key("d", false, false, false), Some(TalkAction::Dark));
+        assert_eq!(talk_action_for_key("D", true, false, false), Some(TalkAction::Dark));
+        assert_eq!(talk_action_for_key("d", false, true, false), None);
+        assert_eq!(talk_action_for_key("d", false, false, true), None);
+    }
 
     #[test]
     fn browser_zoom_is_relative_to_the_initial_pixel_ratio() {
@@ -2479,6 +2487,8 @@ fn talk_page(props: &TalkPageProps) -> Html {
     let presenter_open = use_state(|| false);
     let utilities_open = use_state(|| false);
     let fullscreen = use_state(|| false);
+    let dark = use_state(stored_talk_dark);
+    let themed = deck.template.is_some();
     let exit_href = site_url(&props.exit_route);
     let exit_click = {
         let exit_href = exit_href.clone();
@@ -2561,6 +2571,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
         let paused = paused.clone();
         let help_open = help_open.clone();
         let presenter_open = presenter_open.clone();
+        let dark = dark.clone();
         let talk_root = talk_root.clone();
         let exit_href = exit_href.clone();
         use_effect_with(
@@ -2571,6 +2582,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
                 *paused,
                 *help_open,
                 *presenter_open,
+                *dark,
             ),
             move |_| {
                 let listener =
@@ -2604,6 +2616,12 @@ fn talk_page(props: &TalkPageProps) -> Html {
                                     exit_talk(&exit_href);
                                 }
                                 TalkAction::Fullscreen => toggle_fullscreen(&talk_root),
+                                TalkAction::Dark => {
+                                    if themed {
+                                        store_talk_dark(!*dark);
+                                        dark.set(!*dark);
+                                    }
+                                }
                             }
                             return;
                         }
@@ -2804,6 +2822,13 @@ fn talk_page(props: &TalkPageProps) -> Html {
         let talk_root = talk_root.clone();
         Callback::from(move |_| toggle_fullscreen(&talk_root))
     };
+    let toggle_dark = {
+        let dark = dark.clone();
+        Callback::from(move |_| {
+            store_talk_dark(!*dark);
+            dark.set(!*dark);
+        })
+    };
     let jump_to_slide = {
         let deck_state = deck_state.clone();
         let group_lengths = group_lengths.clone();
@@ -2895,6 +2920,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
             tabindex="-1"
             class="reveal bordeline faqe-talk"
             data-faqe-talk-template={deck.template.clone()}
+            data-faqe-talk-scheme={if themed && *dark { "dark" } else { "light" }}
             data-faqe-talk-h={current.0.to_string()}
             data-faqe-talk-v={current.1.to_string()}
             data-faqe-talk-f={deck_state.fragment.to_string()}
@@ -2937,6 +2963,9 @@ fn talk_page(props: &TalkPageProps) -> Html {
                         <button type="button" aria-label="Toggle fullscreen" aria-pressed={fullscreen.to_string()} onclick={toggle_fullscreen_click}>{"F"}</button>
                         <button type="button" aria-label="Show keyboard help" aria-pressed={help_open.to_string()} onclick={toggle_help.clone()}>{"?"}</button>
                         <button type="button" aria-label="Toggle speaker view" aria-pressed={presenter_open.to_string()} onclick={toggle_presenter.clone()}>{"S"}</button>
+                        {if themed { html! {
+                            <button type="button" aria-label="Toggle dark theme" aria-pressed={dark.to_string()} onclick={toggle_dark}>{"D"}</button>
+                        } } else { Html::default() }}
                     </span>
                 } } else { Html::default() }}
                 <button type="button" class="faqe-talk-utilities-toggle" aria-label="Toggle presentation utilities" aria-expanded={utilities_open.to_string()} aria-controls="faqe-talk-utilities" onclick={toggle_utilities}>{"TOOLS"}</button>
@@ -2997,7 +3026,23 @@ enum TalkAction {
     Fullscreen,
     Help,
     Presenter,
+    Dark,
     Escape,
+}
+
+const TALK_SCHEME_KEY: &str = "faqe-talk-scheme";
+
+fn stored_talk_dark() -> bool {
+    web_sys::window()
+        .and_then(|window| window.local_storage().ok().flatten())
+        .and_then(|storage| storage.get_item(TALK_SCHEME_KEY).ok().flatten())
+        .is_some_and(|scheme| scheme == "dark")
+}
+
+fn store_talk_dark(dark: bool) {
+    if let Some(storage) = web_sys::window().and_then(|window| window.local_storage().ok().flatten()) {
+        let _ = storage.set_item(TALK_SCHEME_KEY, if dark { "dark" } else { "light" });
+    }
 }
 
 fn talk_action_for_key(
@@ -3018,6 +3063,7 @@ fn talk_action_for_key(
         "f" | "F" => Some(TalkAction::Fullscreen),
         "?" => Some(TalkAction::Help),
         "s" | "S" => Some(TalkAction::Presenter),
+        "d" | "D" => Some(TalkAction::Dark),
         _ => None,
     }
 }
@@ -3228,6 +3274,7 @@ fn talk_help(close: Callback<MouseEvent>) -> Html {
                 <dt>{"Pause / blackout"}</dt><dd>{"B or ."}</dd>
                 <dt>{"Fullscreen"}</dt><dd>{"F"}</dd>
                 <dt>{"Speaker view"}</dt><dd>{"S"}</dd>
+                <dt>{"Dark theme (templated talks)"}</dt><dd>{"D"}</dd>
                 <dt>{"Exit presentation"}</dt><dd>{"Escape"}</dd>
             </dl>
             <button type="button" onclick={close}>{"Close keyboard help"}</button>

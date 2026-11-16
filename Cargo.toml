@@ -68,6 +68,7 @@ features = [
     "NodeList",
     "PopStateEvent",
     "Response",
+    "Storage",
     "Window",
 ]
 
