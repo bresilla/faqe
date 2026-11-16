@@ -16,7 +16,9 @@ use faqe_content::{
     load_site, normalized_collision_key, AliasSpec, ContentAsset, ContentError, FeedSpec,
     LoadReport, PublicFileSpec,
 };
-use faqe_model::{accessible_palette, Document, DocumentNode, Page, PageKind, SiteBundle, Theme};
+use faqe_model::{
+    accessible_palette, Document, DocumentNode, Page, PageKind, SiteBundle, TalkCanvas, Theme,
+};
 use include_dir::{include_dir, Dir};
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -377,6 +379,7 @@ fn validate_site(content: &Path) -> Result<ValidatedSite, Error> {
 
     loaded.bundle.pages.retain(Page::is_published);
     loaded.bundle = SiteBundle::new(loaded.bundle.site, loaded.bundle.pages);
+    apply_talk_templates(&mut loaded.bundle)?;
 
     // Asset URLs are rewritten to their fingerprinted output paths during
     // loading. Keeping only paths referenced by the release bundle prevents a
@@ -398,6 +401,39 @@ fn validate_site(content: &Path) -> Result<ValidatedSite, Error> {
         loaded,
         public_files,
     })
+}
+
+/// Resolve each deck's sidecar template against the selected theme and record its canvas.
+fn apply_talk_templates(bundle: &mut SiteBundle) -> Result<(), Error> {
+    let Some(selected_theme) = theme::resolve(&bundle.site.theme) else {
+        return Ok(());
+    };
+    for page in &mut bundle.pages {
+        let Some(deck) = page.talk.as_mut() else {
+            continue;
+        };
+        let Some(id) = deck.template.as_deref() else {
+            continue;
+        };
+        let template = selected_theme.talk_template(id).ok_or_else(|| {
+            let available = selected_theme
+                .talk_templates
+                .iter()
+                .map(|template| template.id)
+                .collect::<Vec<_>>();
+            Error::Validation(format!(
+                "{} selects talk template {id:?}, which theme {:?} does not provide; available templates: {}",
+                page.source_path,
+                selected_theme.id,
+                if available.is_empty() { "none".into() } else { available.join(", ") }
+            ))
+        })?;
+        deck.canvas = Some(TalkCanvas {
+            width: template.width,
+            height: template.height,
+        });
+    }
+    Ok(())
 }
 
 /// Validate the complete publication model without committing an output tree.
@@ -1132,8 +1168,12 @@ async function start(){{loading();const retry=attempt++===0?'':`?faqe-retry=${{a
 void start();"#
         );
         let mut asset_paths = BTreeMap::new();
+        let template_assets = selected_theme
+            .talk_templates
+            .iter()
+            .flat_map(|template| template.assets);
         let mut theme_assets = Vec::with_capacity(selected_theme.assets.len());
-        for source in selected_theme.assets {
+        for source in selected_theme.assets.iter().chain(template_assets) {
             let output_path = asset_name(source.stem, source.extension, source.bytes);
             let file_name = Path::new(&output_path)
                 .file_name()
@@ -1180,7 +1220,10 @@ void start();"#
             render(&(selected_theme.styles.motion)())?
         );
         let resume_css_source = render(selected_theme.styles.resume)?;
-        let slide_css_source = render(selected_theme.styles.talk)?;
+        let mut slide_css_source = render(selected_theme.styles.talk)?;
+        for template in selected_theme.talk_templates {
+            slide_css_source.push_str(&render(template.style)?);
+        }
         Ok(Self {
             js,
             wasm,

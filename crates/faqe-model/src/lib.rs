@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub const SITE_SCHEMA_VERSION: u32 = 7;
+pub const SITE_SCHEMA_VERSION: u32 = 8;
 pub const DEFAULT_THEME_ID: &str = "bresilla";
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -627,7 +627,19 @@ pub struct ResumeSkill {
 pub struct TalkDeck {
     #[serde(default)]
     pub author: String,
+    /// Theme-owned talk template selected by the deck's `.faqe.toml` sidecar.
+    #[serde(default)]
+    pub template: Option<String>,
+    /// Slide canvas declared by the selected template; `None` uses the renderer default.
+    #[serde(default)]
+    pub canvas: Option<TalkCanvas>,
     pub slides: Vec<TalkSlide>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TalkCanvas {
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]

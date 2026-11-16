@@ -1,6 +1,6 @@
 //! Bresilla visual theme.
 
-use super::{Asset, Definition, FontFace, StyleSheets};
+use super::{wur, Asset, Definition, FontFace, StyleSheets};
 
 pub const ID: &str = "bresilla";
 
@@ -62,6 +62,7 @@ pub static DEFINITION: Definition = Definition {
         talk: TALK,
         motion: motion_css,
     },
+    talk_templates: &[wur::TEMPLATE],
 };
 
 pub const BASE: &str = r#"
@@ -359,4 +360,5 @@ html,body,#faqe{height:100%;height:100dvh;margin:0;overflow:hidden;width:100%;wi
 @media(max-width:900px){.faqe-talk{--faqe-frame-inset:8px;--faqe-slide-pad-x:58px;--faqe-slide-pad-top:62px;--faqe-slide-pad-bottom:54px}.faqe-talk h1{font-size:1.5em;max-width:18ch}.faqe-talk p,.faqe-talk ul,.faqe-talk ol{max-width:46ch}.faqe-talk .imagetextframe{font-size:.32em;max-width:44ch}.faqe-talk .title-slide{padding-left:72px;padding-right:72px}.faqe-talk .title-slide h1{font-size:2em}.faqe-talk-canvas-title{left:26px}.faqe-talk-canvas-meta{right:26px}.faqe-talk .controls{right:26px}.faqe-talk .presenterm-columns{grid-template-columns:1fr!important}}
 @media print{.faqe-talk-canvas-title,.faqe-talk-canvas-meta{display:none!important}.faqe-talk .slides>section:not(:has(>section)),.faqe-talk .slides>section>section{background:var(--faqe-print-background-color,var(--bg-color));overflow:hidden;padding:64px 72px}}
 @media(prefers-reduced-motion:reduce){.faqe-talk .present .faqe-graph-node,.faqe-talk .present .faqe-graph-edge,.faqe-talk .present .faqe-graph-arrow,.faqe-talk .present .faqe-graph-edge-label,.faqe-talk .present .faqe-timeline-item,.faqe-talk .present .faqe-grid-item,.faqe-talk .present .faqe-progress-item{animation:none}}
+.faqe-talk .title-slide>.title-date{display:none}
 "#;

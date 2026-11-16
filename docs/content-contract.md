@@ -484,10 +484,45 @@ interactive colors for the selected background.
 
 FAQE-only card and taxonomy metadata stays out of the shared Markdown. An
 optional sibling named `<deck>.faqe.toml` may contain only `slug`, `thumbnail`,
-`foot`, `link`, `part`, `credits`, `tags`, `categories`, and `series`. New decks
-should normally derive their route from the filename and omit the sidecar. This
-keeps every presentation file valid under Presenterm's default strict front
-matter parser.
+`foot`, `link`, `part`, `credits`, `tags`, `categories`, `series`, `template`,
+`title_layout`, and `title_image`. New decks should normally derive their route
+from the filename and omit the sidecar. This keeps every presentation file valid
+under Presenterm's default strict front matter parser.
+
+### Talk templates
+
+`template` selects a per-deck talk template provided by the site's theme; an
+unknown template fails `faqe check` and `faqe build`. A template owns the slide
+canvas size and its own scoped styling and artwork. `title_layout` is `wide`,
+`left`, or `right` and becomes a `title-<layout>` class on the introduction
+slide. `title_image` is a sibling-relative image used as the introduction
+slide's background. The introduction slide carries `title-subtitle`,
+`title-date`, and `title-author` paragraphs so templates can place each line.
+
+```toml
+# lecture.faqe.toml
+template = "wur"
+title_layout = "left"
+title_image = "lecture/title.jpg"
+```
+
+The `bresilla` theme provides `wur`, the Wageningen University & Research
+layout on a 960 × 540 canvas. It maps ordinary Presenterm structure onto the
+WUR designs without FAQE-only commands:
+
+| Presenterm source | WUR rendering |
+| --- | --- |
+| front matter `title`, `sub_title`, `date`, `author` | title slide (`title_layout` picks the wide band or the left/right panel) |
+| `jump_to_middle` | section slide on the left green panel |
+| `jump_to_middle` + `alignment: right` / `center` | right blue panel / wide lime band |
+| image inside a `jump_to_middle` slide | full-bleed section background |
+| a slide holding only one image | full-slide image without footer |
+| `column_layout` | WUR text/image split columns |
+| `no_footer` | hides the footer bar and slide number |
+
+Use the WUR palette in the Presenterm theme override so the terminal rendering
+matches: background `ffffff`, foreground `002b47`, accent `004d00`, chromatic
+`97c600`, and slide title `004d00` with `theme.name: light`.
 
 ### Decorative background video
 

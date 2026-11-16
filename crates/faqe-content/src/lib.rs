@@ -1010,21 +1010,24 @@ fn load_site_metadata(
     Ok(site)
 }
 
-fn validate_theme_id(path: &Path, theme: &str) -> Result<(), ContentError> {
-    let valid = !theme.is_empty()
-        && theme.bytes().all(|character| {
+fn is_registry_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|character| {
             character.is_ascii_lowercase() || character.is_ascii_digit() || character == b'-'
         })
-        && theme
+        && value
             .as_bytes()
             .first()
             .is_some_and(u8::is_ascii_alphanumeric)
-        && theme
+        && value
             .as_bytes()
             .last()
             .is_some_and(u8::is_ascii_alphanumeric)
-        && !theme.contains("--");
-    if valid {
+        && !value.contains("--")
+}
+
+fn validate_theme_id(path: &Path, theme: &str) -> Result<(), ContentError> {
+    if is_registry_id(theme) {
         Ok(())
     } else {
         Err(ContentError::FrontMatter {
@@ -1396,6 +1399,7 @@ fn parse_page(
         }
     }
     let talk = if kind == PageKind::Talk {
+        let options = talk_options(content_root, relative_path, table, assets)?;
         let mut context = TalkParseContext {
             content_root,
             page_path: relative_path,
@@ -1406,6 +1410,7 @@ fn parse_page(
             presenterm
                 .as_ref()
                 .expect("talk pages require Presenterm front matter"),
+            &options,
             &mut context,
         )?)
     } else {
@@ -1665,6 +1670,55 @@ struct TalkParseContext<'a> {
     assets: &'a mut BTreeMap<String, ContentAsset>,
 }
 
+/// Sidecar-selected presentation template options.
+#[derive(Default)]
+struct TalkOptions {
+    template: Option<String>,
+    title_layout: Option<String>,
+    title_image: Option<String>,
+}
+
+const TITLE_LAYOUTS: &[&str] = &["wide", "left", "right"];
+
+fn talk_options(
+    content_root: &Path,
+    path: &Path,
+    table: &toml::value::Table,
+    assets: &mut BTreeMap<String, ContentAsset>,
+) -> Result<TalkOptions, ContentError> {
+    let template = string(table, "template").map(ToOwned::to_owned);
+    if let Some(template) = template.as_deref() {
+        if !is_registry_id(template) {
+            return Err(ContentError::FrontMatter {
+                path: path.to_owned(),
+                message: format!(
+                    "template {template:?} must be a lowercase ASCII identifier containing letters, digits, and single hyphens"
+                ),
+            });
+        }
+    }
+    let title_layout = string(table, "title_layout").map(ToOwned::to_owned);
+    if let Some(layout) = title_layout.as_deref() {
+        if !TITLE_LAYOUTS.contains(&layout) {
+            return Err(ContentError::FrontMatter {
+                path: path.to_owned(),
+                message: format!(
+                    "title_layout {layout:?} must be one of {}",
+                    TITLE_LAYOUTS.join(", ")
+                ),
+            });
+        }
+    }
+    let title_image = string(table, "title_image")
+        .map(|url| resolve_asset_url(content_root, path, url, assets))
+        .transpose()?;
+    Ok(TalkOptions {
+        template,
+        title_layout,
+        title_image,
+    })
+}
+
 fn parse_presenterm_front_matter(
     path: &Path,
     source: &str,
@@ -1791,7 +1845,10 @@ fn presenterm_page_table(
             "series",
             "slug",
             "tags",
+            "template",
             "thumbnail",
+            "title_image",
+            "title_layout",
         ];
         if let Some(key) = sidecar
             .keys()
@@ -1872,6 +1929,7 @@ fn markdown_plain_text(markdown: &str) -> String {
 fn parse_talk(
     source: &str,
     front_matter: &serde_yaml::Value,
+    options: &TalkOptions,
     context: &mut TalkParseContext<'_>,
 ) -> Result<TalkDeck, ContentError> {
     let author = presenterm_author(front_matter);
@@ -1879,7 +1937,7 @@ fn parse_talk(
     let mut markdown = String::new();
     let mut fence = None;
 
-    if let Some(slide) = presenterm_intro_slide(front_matter, context)? {
+    if let Some(slide) = presenterm_intro_slide(front_matter, options, context)? {
         slides.push(slide);
     }
 
@@ -1903,7 +1961,12 @@ fn parse_talk(
         }
     }
     push_presenterm_slide(&mut slides, &mut markdown, context)?;
-    Ok(TalkDeck { author, slides })
+    Ok(TalkDeck {
+        author,
+        template: options.template.clone(),
+        canvas: None,
+        slides,
+    })
 }
 
 fn opening_fence(line: &str) -> Option<(char, usize)> {
@@ -1932,6 +1995,7 @@ fn is_closing_fence(line: &str, marker: char, opening_length: usize) -> bool {
 
 fn presenterm_intro_slide(
     front_matter: &serde_yaml::Value,
+    options: &TalkOptions,
     context: &mut TalkParseContext<'_>,
 ) -> Result<Option<TalkSlide>, ContentError> {
     let title = yaml_string(front_matter, &["title"]);
@@ -1940,25 +2004,48 @@ fn presenterm_intro_slide(
     if title.is_none() && subtitle.is_none() && author.is_empty() {
         return Ok(None);
     }
-    let mut markdown = String::new();
-    if let Some(title) = title {
-        markdown.push_str("# ");
-        markdown.push_str(title);
-        markdown.push_str("\n\n");
+    let date = yaml_string(front_matter, &["date"]).map(|date| {
+        NaiveDate::parse_from_str(date, "%Y-%m-%d").map_or_else(
+            |_| date.to_owned(),
+            |day| day.format("%-d %B %Y").to_string(),
+        )
+    });
+    let parts = [
+        (title.map(|title| format!("# {title}")), None),
+        (subtitle.map(ToOwned::to_owned), Some("title-subtitle")),
+        (date, Some("title-date")),
+        (
+            (!author.is_empty()).then(|| format!("**{author}**")),
+            Some("title-author"),
+        ),
+    ];
+    let mut nodes = Vec::new();
+    for (markdown, class) in parts {
+        let Some(markdown) = markdown else {
+            continue;
+        };
+        let mut document = presenterm_markdown_document(&markdown, context, false)?;
+        if let (Some(class), Some(DocumentNode::Element(element))) = (
+            class,
+            document
+                .nodes
+                .iter_mut()
+                .find(|node| matches!(node, DocumentNode::Element(_))),
+        ) {
+            add_class(&mut element.attributes, class);
+        }
+        nodes.extend(document.nodes);
     }
-    if let Some(subtitle) = subtitle {
-        markdown.push_str(subtitle);
-        markdown.push_str("\n\n");
+    let mut attributes = BTreeMap::from([("class".into(), "title-slide".into())]);
+    if let Some(layout) = options.title_layout.as_deref() {
+        add_class(&mut attributes, &format!("title-{layout}"));
     }
-    if !author.is_empty() {
-        markdown.push_str("**");
-        markdown.push_str(&author);
-        markdown.push_str("**\n");
+    if let Some(image) = options.title_image.clone() {
+        attributes.insert("background-image".into(), image);
     }
-    let document = presenterm_markdown_document(&markdown, context, false)?;
     Ok(Some(TalkSlide {
-        document,
-        attributes: BTreeMap::from([("class".into(), "title-slide".into())]),
+        document: Document { nodes },
+        attributes,
         vertical_group: None,
     }))
 }
@@ -2166,6 +2253,9 @@ fn push_presenterm_slide(
         }));
     }
     source.clear();
+    if is_single_image_slide(&roots) {
+        add_class(&mut attributes, "image-only");
+    }
     if !skip && !roots.is_empty() {
         slides.push(TalkSlide {
             document: Document { nodes: roots },
@@ -2174,6 +2264,24 @@ fn push_presenterm_slide(
         });
     }
     Ok(())
+}
+
+/// A slide whose visible content is one paragraph holding one image.
+fn is_single_image_slide(nodes: &[DocumentNode]) -> bool {
+    let meaningful = |node: &&DocumentNode| match node {
+        DocumentNode::Text { value } => !value.trim().is_empty(),
+        DocumentNode::Element(element) => element.tag != "aside",
+    };
+    let mut content = nodes.iter().filter(meaningful);
+    let (Some(DocumentNode::Element(paragraph)), None) = (content.next(), content.next()) else {
+        return false;
+    };
+    let mut children = paragraph.children.iter().filter(meaningful);
+    paragraph.tag == "p"
+        && matches!(
+            (children.next(), children.next()),
+            (Some(DocumentNode::Element(image)), None) if image.tag == "img"
+        )
 }
 
 fn extract_presenterm_notes(source: &str) -> (String, Vec<String>) {
@@ -3532,7 +3640,8 @@ fn main() {}
             assets: &mut assets,
         };
         let front_matter = serde_yaml::from_str("{}").unwrap();
-        let deck = parse_talk(source, &front_matter, &mut context).unwrap();
+        let deck =
+            parse_talk(source, &front_matter, &TalkOptions::default(), &mut context).unwrap();
         let mut kinds = Vec::new();
         collect_element_kinds(&deck.slides[0].document.nodes, &mut kinds);
 
@@ -3555,7 +3664,13 @@ author: Trim Bresilla & Anouk Leunissen
 "#,
         )
         .unwrap();
-        let deck = parse_talk("# Body", &front_matter, &mut context).unwrap();
+        let deck = parse_talk(
+            "# Body",
+            &front_matter,
+            &TalkOptions::default(),
+            &mut context,
+        )
+        .unwrap();
 
         assert_eq!(deck.author, "Trim Bresilla & Anouk Leunissen");
     }
@@ -3577,9 +3692,95 @@ authors:
 "#,
         )
         .unwrap();
-        let deck = parse_talk("# Body", &front_matter, &mut context).unwrap();
+        let deck = parse_talk(
+            "# Body",
+            &front_matter,
+            &TalkOptions::default(),
+            &mut context,
+        )
+        .unwrap();
 
         assert_eq!(deck.author, "Trim Bresilla · Anouk Leunissen");
+    }
+
+    #[test]
+    fn presentation_template_options_shape_the_intro_slide() {
+        let mut assets = BTreeMap::new();
+        let mut context = TalkParseContext {
+            content_root: Path::new("."),
+            page_path: Path::new("talks/templated.md"),
+            assets: &mut assets,
+        };
+        let front_matter = serde_yaml::from_str(
+            r#"
+title: Templated deck
+sub_title: A subtitle
+author: Trim Bresilla
+date: 2026-11-16
+"#,
+        )
+        .unwrap();
+        let options = TalkOptions {
+            template: Some("wur".into()),
+            title_layout: Some("left".into()),
+            title_image: Some("/assets/content/title-0011223344556677.jpg".into()),
+        };
+        let deck = parse_talk("# Body", &front_matter, &options, &mut context).unwrap();
+        let intro = &deck.slides[0];
+        let classes = |node: &DocumentNode| match node {
+            DocumentNode::Element(element) => element.attributes.get("class").cloned(),
+            DocumentNode::Text { .. } => None,
+        };
+        let paragraph_classes = intro
+            .document
+            .nodes
+            .iter()
+            .filter_map(classes)
+            .collect::<Vec<_>>();
+
+        assert_eq!(deck.template.as_deref(), Some("wur"));
+        assert_eq!(
+            intro.attributes.get("class").map(String::as_str),
+            Some("title-slide title-left")
+        );
+        assert_eq!(
+            intro.attributes.get("background-image").map(String::as_str),
+            Some("/assets/content/title-0011223344556677.jpg")
+        );
+        assert_eq!(
+            paragraph_classes,
+            ["title-subtitle", "title-date", "title-author"]
+        );
+        assert!(document_text(&intro.document.nodes).contains("16 November 2026"));
+    }
+
+    #[test]
+    fn single_image_slides_are_classified() {
+        let mut assets = BTreeMap::new();
+        let mut context = TalkParseContext {
+            content_root: Path::new("."),
+            page_path: Path::new("talks/images.md"),
+            assets: &mut assets,
+        };
+        let front_matter = serde_yaml::from_str("{}").unwrap();
+        let source = "![](https://example.com/a.png)\n\n<!-- speaker_note: Only notes. -->\n\n<!-- end_slide -->\n\nTitle\n=====\n\n![](https://example.com/b.png)\n";
+        let deck =
+            parse_talk(source, &front_matter, &TalkOptions::default(), &mut context).unwrap();
+        let class = |index: usize| deck.slides[index].attributes.get("class").cloned();
+
+        assert_eq!(class(0).as_deref(), Some("image-only"));
+        assert_eq!(class(1), None);
+    }
+
+    #[test]
+    fn presentation_template_options_are_validated() {
+        let mut assets = BTreeMap::new();
+        let path = Path::new("talks/invalid.md");
+        let invalid_template = toml::toml! { template = "WUR theme" };
+        let invalid_layout = toml::toml! { title_layout = "diagonal" };
+
+        assert!(talk_options(Path::new("."), path, &invalid_template, &mut assets).is_err());
+        assert!(talk_options(Path::new("."), path, &invalid_layout, &mut assets).is_err());
     }
 
     fn collect_element_kinds(nodes: &[DocumentNode], kinds: &mut Vec<ElementKind>) {

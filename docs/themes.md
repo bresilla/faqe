@@ -60,6 +60,19 @@ may reference an asset by ID with this build-time placeholder:
 The placeholder resolves to the emitted fingerprinted filename. Missing and
 duplicate asset IDs are build errors.
 
+## Talk templates
+
+A theme may register per-deck talk templates in `Definition::talk_templates`.
+A `TalkTemplate` has an ID, a slide canvas width and height, its own assets, and
+a talk-stylesheet layer scoped to `.faqe-talk[data-faqe-talk-template="<id>"]`.
+A deck selects one with `template = "<id>"` in its `.faqe.toml` sidecar. The
+build records the template's canvas on the deck, the renderer scales slides to
+that canvas, and each slide exposes `data-faqe-slide-number` for template
+chrome. Template asset IDs share the theme's namespace and must be unique.
+
+Templates live beside the themes in `crates/faqe-cli/src/theme/`; `wur.rs` is
+the reference template and is registered by the `bresilla` theme.
+
 ## Adding a theme
 
 To add a `cyberpunk` theme:

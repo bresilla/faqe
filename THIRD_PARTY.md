@@ -10,6 +10,7 @@ amount of third-party content still emitted or referenced by the binary.
 | GohuFont uni14 | `LICENSES/GOHUFONT-WTFPL.txt`, `LICENSES/GOHUFONT-PROVENANCE.md` | WTFPL v2 |
 | DotGothic16 Regular | `LICENSES/DOTGOTHIC16-OFL.txt` | SIL Open Font License 1.1 |
 | Font Awesome 4.5 selected icon outlines | `LICENSES/FONT-AWESOME-OFL.txt` | SIL Open Font License 1.1 |
+| WUR talk template logo, title artwork, and layout (`drapado/Quarto-WUR` commit `0467d134c9d60c6be2095d5c925799580672dba9`) | `LICENSES/WUR-PROPRIETARY.txt` | Wageningen University & Research proprietary license |
 | Site chrome, post, and page media | files co-located with source under `content/` | Content owner is responsible for publication rights |
 
 The generator itself ships no third-party browser framework. The maintained

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 mod bresilla;
+mod wur;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Asset {
@@ -30,11 +31,31 @@ pub struct StyleSheets {
     pub motion: fn() -> String,
 }
 
+/// Per-deck presentation template selected by a talk sidecar's `template` key.
+#[derive(Clone, Copy, Debug)]
+pub struct TalkTemplate {
+    pub id: &'static str,
+    pub width: u32,
+    pub height: u32,
+    pub assets: &'static [Asset],
+    /// Talk-stylesheet layer scoped to `[data-faqe-talk-template="<id>"]`.
+    pub style: &'static str,
+}
+
 pub struct Definition {
     pub id: &'static str,
     pub assets: &'static [Asset],
     pub fonts: &'static [FontFace],
     pub styles: StyleSheets,
+    pub talk_templates: &'static [TalkTemplate],
+}
+
+impl Definition {
+    pub fn talk_template(&self, id: &str) -> Option<&'static TalkTemplate> {
+        self.talk_templates
+            .iter()
+            .find(|template| template.id == id)
+    }
 }
 
 pub fn resolve(id: &str) -> Option<&'static Definition> {
@@ -97,6 +118,18 @@ mod tests {
             }
             for font in theme.fonts {
                 assert!(asset_ids.contains(font.asset_id));
+            }
+            let mut template_ids = BTreeSet::new();
+            for template in theme.talk_templates {
+                assert!(template_ids.insert(template.id));
+                assert!(template.width > 0 && template.height > 0);
+                assert!(template
+                    .style
+                    .contains(&format!("[data-faqe-talk-template=\"{}\"]", template.id)));
+                for asset in template.assets {
+                    assert!(asset_ids.insert(asset.id));
+                    assert!(!asset.bytes.is_empty());
+                }
             }
         }
     }

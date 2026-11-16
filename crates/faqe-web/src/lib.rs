@@ -2727,7 +2727,13 @@ fn talk_page(props: &TalkPageProps) -> Html {
             || ()
         });
     }
-    let config = DeckConfig::default();
+    let config = deck
+        .canvas
+        .map_or_else(DeckConfig::default, |canvas| DeckConfig {
+            width: f64::from(canvas.width),
+            height: f64::from(canvas.height),
+            ..DeckConfig::default()
+        });
     let scale = deck_scale(viewport.0, viewport.1, config)
         * deck_zoom_ratio(*initial_pixel_ratio, browser_pixel_ratio());
     let slides_style = format!(
@@ -2888,6 +2894,7 @@ fn talk_page(props: &TalkPageProps) -> Html {
             id="main"
             tabindex="-1"
             class="reveal bordeline faqe-talk"
+            data-faqe-talk-template={deck.template.clone()}
             data-faqe-talk-h={current.0.to_string()}
             data-faqe-talk-v={current.1.to_string()}
             data-faqe-talk-f={deck_state.fragment.to_string()}
@@ -3711,13 +3718,14 @@ fn talk_sections(
                 index += 1;
             }
             sections.push(
-                html! { <section class={state} aria-hidden={(state != "present").to_string()}>{for slides[start..index].iter().enumerate().map(|(vertical, slide)| talk_slide(slide, talk_nested_state(state, vertical, current.1), (horizontal, vertical), slides, active_fragment, page_style))}</section> },
+                html! { <section class={state} aria-hidden={(state != "present").to_string()}>{for slides[start..index].iter().enumerate().map(|(vertical, slide)| talk_slide(slide, talk_nested_state(state, vertical, current.1), (horizontal, vertical), start + vertical + 1, slides, active_fragment, page_style))}</section> },
             );
         } else {
             sections.push(talk_slide(
                 &slides[index],
                 state,
                 (horizontal, 0),
+                index + 1,
                 slides,
                 active_fragment,
                 page_style,
@@ -3753,6 +3761,7 @@ fn talk_slide(
     slide: &TalkSlide,
     state: &str,
     position: (usize, usize),
+    number: usize,
     slides: &[TalkSlide],
     active_fragment: usize,
     page_style: &PageStyle,
@@ -3800,6 +3809,7 @@ fn talk_slide(
             data-transition-speed={slide.attributes.get("transition-speed").cloned().unwrap_or_default()}
             data-transition-duration-ms={transition.duration_ms().to_string()}
             data-faqe-fragment={revealed.to_string()}
+            data-faqe-slide-number={number.to_string()}
             data-background-color={background.color.unwrap_or_default()}
             data-background-image={background.image.unwrap_or_default()}
             style={print_style}
