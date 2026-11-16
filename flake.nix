@@ -73,8 +73,42 @@
           libxrandr
         ];
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        rustPlatform = pkgs.makeRustPlatform { cargo = rustToolchain; rustc = rustToolchain; };
+
+        # The release binary, as `make release-build`: the web app built for wasm32,
+        # bound and shrunk, then embedded into the CLI.
+        faqe = rustPlatform.buildRustPackage {
+          pname = "faqe";
+          version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).workspace.package.version;
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./Cargo.toml ./Cargo.lock ./crates ./LICENSE ./LICENSES ./THIRD_PARTY.md
+            ];
+          };
+          cargoLock.lockFile = ./Cargo.lock;
+          nativeBuildInputs = [ pkgs.wasm-bindgen-cli pkgs.binaryen ];
+          cargoBuildFlags = [ "-p" "faqe-cli" ];
+          preBuild = ''
+            export FAQE_EMBED_DIR=$NIX_BUILD_TOP/faqe-embedded
+            mkdir -p "$FAQE_EMBED_DIR"
+            cargo build -p faqe-web --target wasm32-unknown-unknown --release --offline
+            wasm-bindgen target/wasm32-unknown-unknown/release/faqe_web.wasm --target web \
+              --out-dir "$FAQE_EMBED_DIR" --out-name faqe_web
+            wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int \
+              "$FAQE_EMBED_DIR/faqe_web_bg.wasm" -o "$FAQE_EMBED_DIR/faqe_web_bg.wasm.opt"
+            mv "$FAQE_EMBED_DIR/faqe_web_bg.wasm.opt" "$FAQE_EMBED_DIR/faqe_web_bg.wasm"
+            cp LICENSE THIRD_PARTY.md "$FAQE_EMBED_DIR/"
+            cp -R LICENSES "$FAQE_EMBED_DIR/licenses"
+          '';
+          # The tests read the content submodule, which builds don't check out.
+          doCheck = false;
+          meta = { description = "One-binary Markdown-to-WASM personal website generator"; mainProgram = "faqe"; };
+        };
       in
       {
+        packages = { inherit faqe; default = faqe; };
+
         devShells.default = pkgs.mkShell {
           packages = [
             rustToolchain
