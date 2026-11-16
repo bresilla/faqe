@@ -45,7 +45,7 @@ pub const TEMPLATE: TalkTemplate = TalkTemplate {
 
 const STYLE: &str = r#"
 /* Palette, typography, and presentation surface */
-.faqe-talk[data-faqe-talk-template="wur"]{--wur-blue:#002b47;--wur-green:#004d00;--wur-lime:#97c600;--wur-sky:#88c9e4;--wur-cream:#fbf6e5;--wur-grey:#f2f2f2;--wur-x:36px;--wur-top:32px;--wur-bottom:77px;--faqe-talk-chrome-primary:var(--wur-green);--faqe-talk-chrome-secondary:#4d6b7e;--faqe-talk-line:rgba(0,77,0,.38);font-family:Verdana,Arial,sans-serif;font-size:16px;line-height:1.28}
+.faqe-talk[data-faqe-talk-template="wur"]{--wur-blue:#002b47;--wur-green:#004d00;--wur-lime:#97c600;--wur-sky:#88c9e4;--wur-cream:#fbf6e5;--wur-grey:#f2f2f2;--wur-x:28px;--wur-top:22px;--wur-bottom:54px;--faqe-talk-chrome-primary:var(--wur-green);--faqe-talk-chrome-secondary:#4d6b7e;--faqe-talk-line:rgba(0,77,0,.38);font-family:Verdana,Arial,sans-serif;font-size:16px;line-height:1.28}
 .faqe-talk[data-faqe-talk-template="wur"]::before,.faqe-talk[data-faqe-talk-template="wur"]::after,.faqe-talk[data-faqe-talk-template="wur"] .faqe-slide-background::after{display:none}
 .faqe-talk[data-faqe-talk-template="wur"] .faqe-slide-background{background-image:none!important}
 .faqe-talk[data-faqe-talk-template="wur"] .slides>section{align-items:stretch;background:#fff;box-shadow:none;color:var(--wur-blue);justify-content:flex-start;overflow:hidden;padding:var(--wur-top) var(--wur-x) var(--wur-bottom);text-align:left;transform:none!important;transition:opacity .45s ease,visibility .45s}
@@ -109,8 +109,8 @@ const STYLE: &str = r#"
 .faqe-talk[data-faqe-talk-template="wur"] .slides>section.image-only img:not([style*="--faqe-image-width"]){height:100%;object-fit:cover;width:100%}
 
 /* Footer bar, logo, and slide number */
-.faqe-talk[data-faqe-talk-template="wur"] .slides>section:not(.title-slide):not(.jump-middle):not(.no-footer):not(.image-only)::before{background:url('{{asset:wur-logo-light}}') 16px center/132.5px 27px no-repeat,var(--wur-green);border:0;border-radius:9px;bottom:15px;content:"";display:block;font-size:0;height:47px;left:38px;opacity:1;pointer-events:none;position:absolute;right:38px;top:auto;z-index:0}
-.faqe-talk[data-faqe-talk-template="wur"] .slides>section:not(.title-slide):not(.jump-middle):not(.no-footer):not(.image-only)::after{bottom:31.5px;color:var(--wur-cream);content:attr(data-faqe-slide-number);font-size:9px;line-height:1;pointer-events:none;position:absolute;right:54px;z-index:1}
+.faqe-talk[data-faqe-talk-template="wur"] .slides>section:not(.title-slide):not(.jump-middle):not(.no-footer):not(.image-only)::before{background:url('{{asset:wur-logo-light}}') 14px center/113px 23px no-repeat,var(--wur-green);border:0;border-radius:7px;bottom:6px;content:"";display:block;font-size:0;height:36px;left:20px;opacity:1;pointer-events:none;position:absolute;right:20px;top:auto;z-index:0}
+.faqe-talk[data-faqe-talk-template="wur"] .slides>section:not(.title-slide):not(.jump-middle):not(.no-footer):not(.image-only)::after{bottom:19.5px;color:var(--wur-cream);content:attr(data-faqe-slide-number);font-size:9px;line-height:1;pointer-events:none;position:absolute;right:34px;z-index:1}
 
 /* Title designs: wide band, left panel, right panel */
 .faqe-talk[data-faqe-talk-template="wur"] .slides>section:is(.title-slide,.jump-middle){background:#fff var(--faqe-print-background-image,none) center/cover no-repeat;text-align:left}
