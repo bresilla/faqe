@@ -97,7 +97,7 @@ const STYLE: &str = r#"
 .faqe-talk[data-faqe-talk-template="wur"] .presenterm-column{display:flex;flex-direction:column;min-height:0;min-width:0}
 .faqe-talk[data-faqe-talk-template="wur"] .presenterm-column>*{max-width:100%}
 .faqe-talk[data-faqe-talk-template="wur"] :is(section,.presenterm-column)>p:has(>img:only-child){align-items:center;display:flex;flex:1 1 auto;justify-content:center;margin:0;max-width:none;min-height:0;width:100%}
-.faqe-talk[data-faqe-talk-template="wur"] :is(section,.presenterm-column)>p:has(>img[style*="--faqe-image-width"]:only-child){flex:0 0 auto}
+.faqe-talk[data-faqe-talk-template="wur"] :is(section,.presenterm-column)>p:has(>img[style*="--faqe-image-width"]:only-child){flex:0 0 auto;margin-bottom:8px}
 .faqe-talk[data-faqe-talk-template="wur"] .slides img{background:none;border:0;box-shadow:none;height:auto;margin:0;max-height:100%;max-width:100%;object-fit:contain;width:var(--faqe-image-width,auto)}
 .faqe-talk[data-faqe-talk-template="wur"] :is(.imageframeholder,.mediaframeholder){margin:.4em 0;width:100%}
 .faqe-talk[data-faqe-talk-template="wur"] .faqe-embedded-video{border:0;box-shadow:none;max-height:360px}
