@@ -197,6 +197,11 @@ html,body,.wrapper,.content{background:var(--bg-color)!important}
 .faqe-card .faqe-card-meta{align-items:center;color:var(--mute-color,var(--fg-color));display:flex;font-size:1.2rem;gap:.6rem;margin:0;text-align:left;white-space:nowrap}
 .faqe-card .faqe-card-meta::before{background:var(--accent-color);border-radius:50%;content:"";flex:none;height:.7rem;width:.7rem}
 .faqe-card .faqe-card-desc{-webkit-box-orient:vertical;color:var(--mute-color,var(--fg-color));display:-webkit-box;font-size:1.2rem;-webkit-line-clamp:2;line-clamp:2;line-height:1.45;margin:0;overflow:hidden;text-align:left!important}
+
+/* Download links render as buttons */
+.content a[download]{align-items:center;background:color-mix(in srgb,var(--accent-color) 15%,transparent)!important;border:1px solid color-mix(in srgb,var(--accent-color) 45%,transparent);border-radius:6px;color:var(--fg-color)!important;display:inline-flex;margin:.4rem .8rem .4rem 0;padding:.8rem 1.6rem;text-decoration:none!important;transition:background-color .15s,color .15s}
+.content a[download]:hover,.content a[download]:focus-visible{background:var(--accent-color)!important;color:var(--accent-text-color)!important}
+.content a[download]::after{display:none!important}
 "#;
 
 /// Motion rules are generated from the reviewed legacy keyframe tables. Keeping
