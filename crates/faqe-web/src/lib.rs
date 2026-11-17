@@ -30,6 +30,24 @@ fn app() -> Html {
     let active_route = use_state(current_route);
     let retry = use_state(|| 0_u32);
     let focus_after_navigation = use_state(|| false);
+    let rerender = use_force_update();
+
+    {
+        let rerender = rerender.clone();
+        use_effect_with((), move |_| {
+            let listener = web_sys::window()
+                .and_then(|window| {
+                    window
+                        .match_media("(prefers-color-scheme: dark)")
+                        .ok()
+                        .flatten()
+                })
+                .map(|query| {
+                    EventListener::new(&query, "change", move |_| rerender.force_update())
+                });
+            move || drop(listener)
+        });
+    }
 
     {
         let bundle = bundle.clone();
@@ -449,10 +467,35 @@ fn site_url(value: &str) -> String {
     }
 }
 
+fn visitor_accent_hue() -> u16 {
+    gloo_utils::document()
+        .document_element()
+        .and_then(|root| root.get_attribute("data-faqe-accent-hue"))
+        .and_then(|hue| hue.parse().ok())
+        .unwrap_or(faqe_model::BUILD_ACCENT_HUE)
+}
+
+fn system_prefers_dark() -> bool {
+    web_sys::window()
+        .and_then(|window| {
+            window
+                .match_media("(prefers-color-scheme: dark)")
+                .ok()
+                .flatten()
+        })
+        .is_none_or(|query| query.matches())
+}
+
+fn visitor_style(style: &PageStyle) -> faqe_model::EffectiveStyle {
+    faqe_model::effective_style(style, visitor_accent_hue(), system_prefers_dark())
+}
+
 fn apply_theme(style: &faqe_model::PageStyle, theme_id: &str) {
     let Some(root) = gloo_utils::document().document_element() else {
         return;
     };
+    let effective = visitor_style(style);
+    let style = &effective.style;
     let palette = faqe_model::accessible_palette(style)
         .expect("site bundle contains only build-validated page styles");
     let scheme = if style.theme == Theme::Light {
@@ -461,7 +504,7 @@ fn apply_theme(style: &faqe_model::PageStyle, theme_id: &str) {
         "dark"
     };
     let variables = format!(
-        "--accent-color:{};--chromatic-a:{};--chromatic-b:{};--bg-color:{};--fg-color:{};--glitch-color:{};--interactive-color:{};--accent-text-color:{};",
+        "--accent-color:{};--chromatic-a:{};--chromatic-b:{};--bg-color:{};--fg-color:{};--glitch-color:{};--interactive-color:{};--accent-text-color:{};--mute-color:{};--tint:{}%;",
         style.accent,
         style.chromatic[0],
         style.chromatic[1],
@@ -469,7 +512,9 @@ fn apply_theme(style: &faqe_model::PageStyle, theme_id: &str) {
         style.foreground,
         style.foreground,
         palette.interactive,
-        palette.accent_text
+        palette.accent_text,
+        effective.mute,
+        effective.tint
     );
     let _ = root.set_attribute("style", &variables);
     let _ = root.set_attribute("data-faqe-theme", theme_id);
@@ -497,7 +542,7 @@ fn update_metadata(
         (
             "meta[name=theme-color]",
             "content",
-            style.background.clone(),
+            visitor_style(style).style.background,
         ),
         ("meta[property='og:title']", "content", title.to_owned()),
         (
@@ -1808,7 +1853,8 @@ fn direct_child_route(parent: &str, candidate: &str) -> bool {
 }
 
 fn content_card(page: &Page, default_thumbnail: &str) -> Html {
-    let palette = faqe_model::accessible_palette(&page.style)
+    let style = visitor_style(&page.style).style;
+    let palette = faqe_model::accessible_palette(&style)
         .expect("site bundle contains only build-validated page styles");
     let thumbnail = page
         .thumbnail
@@ -1817,7 +1863,7 @@ fn content_card(page: &Page, default_thumbnail: &str) -> Html {
         .unwrap_or(default_thumbnail);
     let card_style = format!(
         "--accent-color:{};--chromatic-a:{};--chromatic-b:{};--card-text-color:{}",
-        page.style.accent, page.style.chromatic[0], page.style.chromatic[1], palette.accent_text
+        style.accent, style.chromatic[0], style.chromatic[1], palette.accent_text
     );
     html! {
         <a class="p-2" href={site_url(&page.route)}><div class="relative" style={card_style}>

@@ -17,7 +17,9 @@ use faqe_content::{
     LoadReport, PublicFileSpec,
 };
 use faqe_model::{
-    accessible_palette, Document, DocumentNode, Page, PageKind, SiteBundle, TalkCanvas, Theme,
+    accessible_palette, effective_style, Document, DocumentNode, Page, PageKind, SchemeTokens,
+    SiteBundle, TalkCanvas, Theme, ACCENT_LIGHTNESS, ACCENT_SATURATION, BUILD_ACCENT_HUE,
+    CHROMATIC_HUE_SHIFT, CHROMATIC_LIGHTNESS, DARK_TOKENS, LIGHT_TOKENS,
 };
 use include_dir::{include_dir, Dir};
 use regex::Regex;
@@ -1029,6 +1031,7 @@ fn write_site(
         output.join(&assets.bootstrap),
         assets.bootstrap_source.as_bytes(),
     )?;
+    write_file(output.join(&assets.scheme), assets.scheme_source.as_bytes())?;
     write_file(output.join(&assets.css), assets.css_source.as_bytes())?;
     for asset in &assets.theme_assets {
         write_file(output.join(&asset.output_path), asset.source.bytes)?;
@@ -1137,6 +1140,8 @@ struct AssetNames {
     wasm: String,
     bootstrap: String,
     bootstrap_source: String,
+    scheme: String,
+    scheme_source: String,
     css: String,
     css_source: String,
     theme_id: &'static str,
@@ -1224,11 +1229,14 @@ void start();"#
         for template in selected_theme.talk_templates {
             slide_css_source.push_str(&render(template.style)?);
         }
+        let scheme_source = scheme_script();
         Ok(Self {
             js,
             wasm,
             bootstrap: asset_name("bootstrap", "js", bootstrap_source.as_bytes()),
             bootstrap_source,
+            scheme: asset_name("scheme", "js", scheme_source.as_bytes()),
+            scheme_source,
             css: asset_name(
                 &format!("theme-{}", selected_theme.id),
                 "css",
@@ -1282,6 +1290,26 @@ fn write_route_shell(
     )
 }
 
+/// Blocking head script that applies the visitor's accent hue and system
+/// scheme before first paint, unless the page pins its own.
+fn scheme_script() -> String {
+    let tokens = |tokens: SchemeTokens| {
+        format!(
+            "[\"{}\",\"{}\",\"{}\",\"{}%\"]",
+            tokens.background, tokens.foreground, tokens.mute, tokens.tint
+        )
+    };
+    format!(
+        r#"(()=>{{const root=document.documentElement;const random=()=>String(Math.floor(Math.random()*360));let hue=null;const reload=performance.getEntriesByType("navigation")[0]?.type==="reload";try{{hue=reload?null:localStorage.getItem("accent-hue");if(hue===null){{hue=random();localStorage.setItem("accent-hue",hue);}}}}catch{{hue=hue??random();}}root.dataset.faqeAccentHue=hue;const set=(name,value)=>root.style.setProperty(name,value);if(!root.hasAttribute("data-faqe-pin-theme")){{const dark=matchMedia("(prefers-color-scheme: dark)").matches;const[bg,fg,mute,tint]=dark?{dark}:{light};root.dataset.faqeScheme=dark?"dark":"light";set("--bg-color",`color-mix(in srgb,var(--accent-color) ${{tint}},${{bg}})`);set("--fg-color",fg);set("--glitch-color",fg);set("--mute-color",mute);set("--tint",tint);}}if(!root.hasAttribute("data-faqe-pin-accent")){{const h=Number(hue);const accent=`hsl(${{h}} {s}% {l}%)`;set("--accent-color",accent);set("--chromatic-a",accent);set("--chromatic-b",`hsl(${{(h+{shift})%360}} {s}% {chroma}%)`);set("--interactive-color",`hsl(${{h}} {s}% ${{root.dataset.faqeScheme==="light"?38:62}}%)`);}}}})();"#,
+        dark = tokens(DARK_TOKENS),
+        light = tokens(LIGHT_TOKENS),
+        s = ACCENT_SATURATION,
+        l = ACCENT_LIGHTNESS,
+        shift = CHROMATIC_HUE_SHIFT,
+        chroma = CHROMATIC_LIGHTNESS,
+    )
+}
+
 fn shell_html(
     route: &str,
     page: Option<&Page>,
@@ -1297,15 +1325,24 @@ fn shell_html(
         .and_then(|page| page.description.as_deref())
         .filter(|description| !description.trim().is_empty())
         .unwrap_or(&bundle.site.description);
-    let style = page
+    let declared = page
         .map(|page| &page.style)
         .unwrap_or(&bundle.site.default_style);
+    let effective = effective_style(declared, BUILD_ACCENT_HUE, true);
+    let style = &effective.style;
     let palette = accessible_palette(style).expect("validated page styles have accessible colors");
     let scheme = if style.theme == Theme::Light {
         "light"
     } else {
         "dark"
     };
+    let pins = format!(
+        "{}{}",
+        if declared.explicit_accent { " data-faqe-pin-accent" } else { "" },
+        if declared.explicit_theme { " data-faqe-pin-theme" } else { "" }
+    );
+    let (mute, tint) = (effective.mute, effective.tint);
+    let scheme_js = escape_attribute(&assets.scheme);
     let root = base_url.trim_end_matches('/');
     let social_image = page
         .and_then(|page| page.thumbnail.as_deref())
@@ -1362,7 +1399,7 @@ fn shell_html(
     let fallback_title = page.map_or(bundle.site.title.as_str(), |page| page.title.as_str());
     let fallback = fallback_html(page, bundle, base_url, fallback_title, description);
     format!(
-        "<!doctype html><html lang=\"en\" data-faqe-theme=\"{}\" data-faqe-scheme=\"{scheme}\" style=\"--accent-color:{};--chromatic-a:{};--chromatic-b:{};--bg-color:{};--fg-color:{};--glitch-color:{};--interactive-color:{};--accent-text-color:{}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'\"><meta name=\"faqe-base\" content=\"{}\"><meta name=\"faqe-site-url\" content=\"{}\"><meta name=\"faqe-bundle\" content=\"{}\"><meta name=\"faqe-theme\" content=\"{}\"><meta name=\"author\" content=\"{}\"><meta name=\"description\" content=\"{}\"><meta name=\"keywords\" content=\"{}\"><meta name=\"theme-color\" content=\"{}\"><meta property=\"og:title\" content=\"{}\"><meta property=\"og:description\" content=\"{}\"><meta property=\"og:type\" content=\"{og_type}\">{article_metadata}<meta name=\"twitter:card\" content=\"summary_large_image\"><meta name=\"twitter:title\" content=\"{}\"><meta name=\"twitter:description\" content=\"{}\">{public_metadata}<title>{}</title><link rel=\"alternate\" type=\"application/rss+xml\" title=\"{}\" href=\"{root}/index.xml\"><link rel=\"icon\" href=\"{root}{}\"><link rel=\"stylesheet\" href=\"{root}/{}\">{extra_css}</head><body><div id=\"faqe-bootstrap-status\" class=\"faqe-bootstrap-status\" hidden role=\"status\" aria-live=\"polite\"></div><div id=\"faqe\">{fallback}</div><script type=\"module\" src=\"{root}/{}\"></script></body></html>",
+        "<!doctype html><html lang=\"en\" data-faqe-theme=\"{}\" data-faqe-scheme=\"{scheme}\"{pins} style=\"--accent-color:{};--chromatic-a:{};--chromatic-b:{};--bg-color:{};--fg-color:{};--glitch-color:{};--interactive-color:{};--accent-text-color:{};--mute-color:{mute};--tint:{tint}%\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'\"><meta name=\"faqe-base\" content=\"{}\"><meta name=\"faqe-site-url\" content=\"{}\"><meta name=\"faqe-bundle\" content=\"{}\"><meta name=\"faqe-theme\" content=\"{}\"><meta name=\"author\" content=\"{}\"><meta name=\"description\" content=\"{}\"><meta name=\"keywords\" content=\"{}\"><meta name=\"theme-color\" content=\"{}\"><meta property=\"og:title\" content=\"{}\"><meta property=\"og:description\" content=\"{}\"><meta property=\"og:type\" content=\"{og_type}\">{article_metadata}<meta name=\"twitter:card\" content=\"summary_large_image\"><meta name=\"twitter:title\" content=\"{}\"><meta name=\"twitter:description\" content=\"{}\">{public_metadata}<title>{}</title><link rel=\"alternate\" type=\"application/rss+xml\" title=\"{}\" href=\"{root}/index.xml\"><link rel=\"icon\" href=\"{root}{}\"><script src=\"{root}/{scheme_js}\"></script><link rel=\"stylesheet\" href=\"{root}/{}\">{extra_css}</head><body><div id=\"faqe-bootstrap-status\" class=\"faqe-bootstrap-status\" hidden role=\"status\" aria-live=\"polite\"></div><div id=\"faqe\">{fallback}</div><script type=\"module\" src=\"{root}/{}\"></script></body></html>",
         escape_attribute(&bundle.site.theme),
         escape_attribute(&style.accent),
         escape_attribute(&style.chromatic[0]),

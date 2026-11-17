@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub const SITE_SCHEMA_VERSION: u32 = 8;
+pub const SITE_SCHEMA_VERSION: u32 = 9;
 pub const DEFAULT_THEME_ID: &str = "bresilla";
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -230,6 +230,10 @@ pub struct PageStyle {
     pub background: String,
     pub foreground: String,
     pub video: Option<String>,
+    #[serde(default)]
+    pub explicit_accent: bool,
+    #[serde(default)]
+    pub explicit_theme: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -296,6 +300,112 @@ pub fn chromatic_partner(accent: &str) -> Option<String> {
 
 fn default_chromatic() -> [String; 2] {
     ["#00e5ff".into(), "#ff2bd6".into()]
+}
+
+/// Colour tokens of one scheme in the shared bresilla site UI.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SchemeTokens {
+    pub background: &'static str,
+    pub foreground: &'static str,
+    pub mute: &'static str,
+    /// Percentage of accent mixed into page surfaces.
+    pub tint: u8,
+}
+
+pub const LIGHT_TOKENS: SchemeTokens = SchemeTokens {
+    background: "#ffffff",
+    foreground: "#1a1a1a",
+    mute: "#6b7280",
+    tint: 5,
+};
+pub const DARK_TOKENS: SchemeTokens = SchemeTokens {
+    background: "#1e1f20",
+    foreground: "#f2f2f2",
+    mute: "#9ca3af",
+    tint: 8,
+};
+pub const ACCENT_SATURATION: u8 = 65;
+pub const ACCENT_LIGHTNESS: u8 = 50;
+pub const CHROMATIC_HUE_SHIFT: u16 = 150;
+pub const CHROMATIC_LIGHTNESS: u8 = 55;
+pub const BUILD_ACCENT_HUE: u16 = 210;
+
+impl SchemeTokens {
+    pub fn for_theme(theme: Theme) -> Self {
+        match theme {
+            Theme::Light => LIGHT_TOKENS,
+            Theme::Dark => DARK_TOKENS,
+        }
+    }
+}
+
+pub fn hsl_hex(hue: u16, saturation: u8, lightness: u8) -> String {
+    let hue = f64::from(hue % 360) / 60.0;
+    let saturation = f64::from(saturation.min(100)) / 100.0;
+    let lightness = f64::from(lightness.min(100)) / 100.0;
+    let chroma = (1.0 - (2.0 * lightness - 1.0).abs()) * saturation;
+    let second = chroma * (1.0 - (hue % 2.0 - 1.0).abs());
+    let (red, green, blue) = match hue as u8 {
+        0 => (chroma, second, 0.0),
+        1 => (second, chroma, 0.0),
+        2 => (0.0, chroma, second),
+        3 => (0.0, second, chroma),
+        4 => (second, 0.0, chroma),
+        _ => (chroma, 0.0, second),
+    };
+    let offset = lightness - chroma / 2.0;
+    Rgb {
+        red: red + offset,
+        green: green + offset,
+        blue: blue + offset,
+    }
+    .to_hex()
+}
+
+/// `percent` of `color` mixed into `base` in sRGB, like CSS `color-mix(in srgb, …)`.
+pub fn mix_hex(base: &str, color: &str, percent: u8) -> Option<String> {
+    let base = opaque_rgb(base, Rgb::WHITE)?;
+    let color = opaque_rgb(color, base)?;
+    Some(base.mix(color, f64::from(percent.min(100)) / 100.0).to_hex())
+}
+
+/// Colours a page renders with after the visitor's accent hue and system
+/// scheme fill in whatever the page leaves unset.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EffectiveStyle {
+    pub style: PageStyle,
+    pub mute: &'static str,
+    pub tint: u8,
+    pub hue: u16,
+}
+
+pub fn effective_style(page: &PageStyle, hue: u16, system_dark: bool) -> EffectiveStyle {
+    let mut style = page.clone();
+    if !page.explicit_theme {
+        style.theme = if system_dark { Theme::Dark } else { Theme::Light };
+        let tokens = SchemeTokens::for_theme(style.theme);
+        style.background = tokens.background.into();
+        style.foreground = tokens.foreground.into();
+    }
+    if !page.explicit_accent {
+        style.accent = hsl_hex(hue, ACCENT_SATURATION, ACCENT_LIGHTNESS);
+        style.chromatic = [
+            style.accent.clone(),
+            hsl_hex(hue + CHROMATIC_HUE_SHIFT, ACCENT_SATURATION, CHROMATIC_LIGHTNESS),
+        ];
+    }
+    let tokens = SchemeTokens::for_theme(style.theme);
+    if !page.explicit_theme {
+        if let Some(surface) = mix_hex(&style.background, &style.accent, tokens.tint) {
+            style.background = surface;
+        }
+    }
+    EffectiveStyle {
+        style,
+        mute: tokens.mute,
+        tint: tokens.tint,
+        hue: hue % 360,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -414,6 +524,8 @@ impl Default for PageStyle {
             background: "#18191c".into(),
             foreground: "#f3f3f3".into(),
             video: None,
+            explicit_accent: false,
+            explicit_theme: false,
         }
     }
 }
@@ -710,4 +822,51 @@ pub fn slugify(value: &str) -> String {
         }
     }
     result.trim_matches('-').to_owned()
+}
+
+#[cfg(test)]
+mod style_tests {
+    use super::*;
+
+    #[test]
+    fn hsl_matches_css_reference_colours() {
+        assert_eq!(hsl_hex(0, 100, 50), "#ff0000");
+        assert_eq!(hsl_hex(120, 100, 50), "#00ff00");
+        assert_eq!(hsl_hex(240, 100, 50), "#0000ff");
+        assert_eq!(hsl_hex(210, 65, 50), "#2d80d2");
+        assert_eq!(hsl_hex(370, 100, 50), hsl_hex(10, 100, 50));
+    }
+
+    #[test]
+    fn inherited_styles_follow_the_visitor() {
+        let page = PageStyle::default();
+        let dark = effective_style(&page, 120, true);
+        assert_eq!(dark.style.theme, Theme::Dark);
+        assert_eq!(dark.style.accent, hsl_hex(120, ACCENT_SATURATION, ACCENT_LIGHTNESS));
+        assert_eq!(
+            Some(dark.style.background.clone()),
+            mix_hex(DARK_TOKENS.background, &dark.style.accent, DARK_TOKENS.tint)
+        );
+        assert_eq!(mix_hex("#000000", "#ffffff", 50).as_deref(), Some("#808080"));
+        let light = effective_style(&page, 120, false);
+        assert_eq!(light.style.foreground, LIGHT_TOKENS.foreground);
+        assert_eq!(light.mute, LIGHT_TOKENS.mute);
+    }
+
+    #[test]
+    fn explicit_styles_win() {
+        let page = PageStyle {
+            accent: "#d71920".into(),
+            theme: Theme::Light,
+            background: "#ffffff".into(),
+            foreground: "#0a0a0a".into(),
+            explicit_accent: true,
+            explicit_theme: true,
+            ..PageStyle::default()
+        };
+        let effective = effective_style(&page, 40, true);
+        assert_eq!(effective.style.accent, "#d71920");
+        assert_eq!(effective.style.theme, Theme::Light);
+        assert_eq!(effective.style.background, "#ffffff");
+    }
 }

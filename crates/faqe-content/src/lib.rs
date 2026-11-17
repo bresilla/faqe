@@ -1876,6 +1876,7 @@ fn presenterm_color(value: Option<&str>) -> Option<String> {
 fn parse_presenterm_style(value: &serde_yaml::Value, defaults: &PageStyle) -> PageStyle {
     let mut style = defaults.clone();
     let theme_name = yaml_string(value, &["theme", "name"]);
+    style.explicit_theme = theme_name.is_some();
     if theme_name.is_some_and(|name| name.contains("light") || name.ends_with("-day")) {
         style.theme = Theme::Light;
         std::mem::swap(&mut style.background, &mut style.foreground);
@@ -1903,6 +1904,7 @@ fn parse_presenterm_style(value: &serde_yaml::Value, defaults: &PageStyle) -> Pa
         }),
     );
     if let Some(accent) = accent {
+        style.explicit_accent = true;
         style.accent = accent.clone();
         style.chromatic[0] = accent.clone();
         style.chromatic[1] = presenterm_color(yaml_string(
@@ -2778,6 +2780,8 @@ fn parse_style(value: Option<&toml::Value>, defaults: &PageStyle) -> PageStyle {
         background,
         foreground,
         video: string(style, "video").map(ToOwned::to_owned),
+        explicit_accent: explicit_accent.is_some(),
+        explicit_theme: string(style, "theme").is_some(),
     }
 }
 
@@ -3526,6 +3530,19 @@ fn decode_basic_entities(value: &str) -> String {
 #[cfg(test)]
 mod primitive_document_tests {
     use super::*;
+
+    #[test]
+    fn style_tables_mark_only_the_keys_a_page_sets() {
+        let defaults = PageStyle::default();
+        let accent: toml::Value = toml::from_str("accent = \"#ff0000\"").unwrap();
+        let style = parse_style(Some(&accent), &defaults);
+        assert!(style.explicit_accent && !style.explicit_theme);
+        let themed: toml::Value = toml::from_str("theme = \"light\"").unwrap();
+        let style = parse_style(Some(&themed), &defaults);
+        assert!(style.explicit_theme && !style.explicit_accent);
+        let inherited = parse_style(None, &defaults);
+        assert!(!inherited.explicit_accent && !inherited.explicit_theme);
+    }
 
     #[test]
     fn footer_images_are_marked_and_keep_their_label() {
