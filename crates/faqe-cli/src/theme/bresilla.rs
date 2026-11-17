@@ -202,6 +202,10 @@ html,body,.wrapper,.content{background:var(--bg-color)!important}
 .content a[download]{align-items:center;background:color-mix(in srgb,var(--accent-color) 15%,transparent)!important;border:1px solid color-mix(in srgb,var(--accent-color) 45%,transparent);border-radius:6px;color:var(--fg-color)!important;display:inline-flex;margin:.4rem .8rem .4rem 0;padding:.8rem 1.6rem;text-decoration:none!important;transition:background-color .15s,color .15s}
 .content a[download]:hover,.content a[download]:focus-visible{background:var(--accent-color)!important;color:var(--accent-text-color)!important}
 .content a[download]::after{display:none!important}
+
+/* Hover underline only on links inside running text */
+a::after{content:none!important}
+.content :is(p,li,td,dd,blockquote)>a:not([download])::after{content:""!important}
 "#;
 
 /// Motion rules are generated from the reviewed legacy keyframe tables. Keeping
@@ -351,7 +355,8 @@ html{font-size:62.5%}
 .resume{font-size:1.5rem;line-height:1.6;margin:0 auto;max-width:116rem;padding:3.2rem 2rem 6rem;width:100%}
 .resume :is(h1,h2,h3,h4,p,ul,ol){background:none;margin:0;padding:0}
 .resume a{color:var(--interactive-color);text-decoration:none}
-.resume a:hover{text-decoration:underline}
+.resume .cv-text a:hover{text-decoration:underline}
+.content .resume :is(.cv-contacts,.cv-entries,.cv-cards,.cv-list,.cv-tags) li>a:not([download])::after{content:none!important}
 .resume .cv-head{align-items:center;background:color-mix(in srgb,var(--accent-color) calc(var(--tint,8%) * 1.5),var(--bg-color));border:1px solid color-mix(in srgb,var(--accent-color) 25%,transparent);border-radius:8px;display:flex;gap:3rem;padding:3rem}
 .resume .cv-photo{border:2px solid var(--accent-color);border-radius:50%;flex:none;height:13rem;object-fit:cover;width:13rem}
 .resume .cv-name{color:var(--fg-color);font-size:3.4rem;font-weight:400;line-height:1.1}
