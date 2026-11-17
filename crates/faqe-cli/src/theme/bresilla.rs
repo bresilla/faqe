@@ -181,20 +181,22 @@ html,body,.wrapper,.content{background:var(--bg-color)!important}
 [data-faqe-scheme=light] .glitch-logo-layer{mix-blend-mode:multiply}
 [data-faqe-scheme=light] .glitch-logo-frame{filter:drop-shadow(0 1.6rem 2.4rem #0003)}
 
-/* Post and talk cards: thumbnail, title, meta line and short description */
-.gridlist{display:grid;gap:1.6rem;grid-template-columns:repeat(auto-fill,minmax(28rem,1fr))}
-.faqe-card{background:color-mix(in srgb,var(--accent-color) 6%,var(--bg-color));border:1px solid color-mix(in srgb,var(--accent-color) 30%,transparent);border-radius:8px;color:var(--fg-color);display:flex;flex-direction:column;overflow:hidden;text-decoration:none!important;transition:border-color .15s,box-shadow .15s,transform .15s}
+/* Post and talk cards: compact row with thumbnail, title, meta line and short description */
+.thelist .gridlist{margin-top:2.4rem;padding:0}
+.gridlist{display:grid;gap:1.2rem;grid-template-columns:repeat(auto-fill,minmax(32rem,1fr))}
+.faqe-card{background:color-mix(in srgb,var(--accent-color) 6%,var(--bg-color));border:1px solid color-mix(in srgb,var(--accent-color) 30%,transparent);border-radius:8px;color:var(--fg-color);display:flex;height:12.8rem;overflow:hidden;text-decoration:none!important;transition:border-color .15s,box-shadow .15s,transform .15s}
 .faqe-card:hover,.faqe-card:focus-visible{border-color:var(--accent-color);box-shadow:-3px 0 var(--chromatic-a),3px 0 var(--chromatic-b);transform:translateY(-2px)}
 .faqe-card::after{display:none!important}
-.faqe-card-media{aspect-ratio:16/9;background:color-mix(in srgb,var(--accent-color) 14%,var(--bg-color));overflow:hidden;position:relative}
+.faqe-card-media{background:color-mix(in srgb,var(--accent-color) 14%,var(--bg-color));flex:none;height:100%;overflow:hidden;position:relative;width:12.8rem}
 .faqe-card-media img{display:block;height:100%;object-fit:cover;width:100%}
 .faqe-card-media.is-placeholder img{display:none}
-.faqe-card-media.is-placeholder::after{background:var(--accent-color);content:"";inset:24%;-webkit-mask:url('{{asset:mark}}') center/contain no-repeat;mask:url('{{asset:mark}}') center/contain no-repeat;position:absolute}
-.faqe-card-body{display:flex;flex:1;flex-direction:column;gap:.6rem;padding:1.4rem 1.6rem 1.6rem}
-.faqe-card .faqe-card-title{background:none;color:var(--fg-color);font-size:1.6rem;font-weight:700;line-height:1.35;margin:0;padding:0;text-align:left}
-.faqe-card .faqe-card-meta{align-items:center;color:var(--mute-color,var(--fg-color));display:flex;font-size:1.25rem;gap:.6rem;margin:0;text-align:left}
-.faqe-card .faqe-card-meta::before{background:var(--accent-color);border-radius:50%;content:"";flex:none;height:.8rem;width:.8rem}
-.faqe-card .faqe-card-desc{-webkit-box-orient:vertical;color:var(--mute-color,var(--fg-color));display:-webkit-box;font-size:1.3rem;-webkit-line-clamp:3;line-clamp:3;line-height:1.5;margin:0;overflow:hidden;text-align:left!important}
+.faqe-card-media.is-placeholder::after{background:var(--accent-color);content:"";inset:22%;-webkit-mask:url('{{asset:mark}}') center/contain no-repeat;mask:url('{{asset:mark}}') center/contain no-repeat;position:absolute}
+.faqe-card-body{display:flex;flex:1;flex-direction:column;gap:.4rem;justify-content:center;min-width:0;padding:1rem 1.4rem}
+.faqe-card-body>*{flex:none}
+.faqe-card .faqe-card-title{-webkit-box-orient:vertical;background:none;color:var(--fg-color);display:-webkit-box;font-size:1.45rem;font-weight:700;-webkit-line-clamp:2;line-clamp:2;line-height:1.3;margin:0;overflow:hidden;padding:0;text-align:left}
+.faqe-card .faqe-card-meta{align-items:center;color:var(--mute-color,var(--fg-color));display:flex;font-size:1.2rem;gap:.6rem;margin:0;text-align:left;white-space:nowrap}
+.faqe-card .faqe-card-meta::before{background:var(--accent-color);border-radius:50%;content:"";flex:none;height:.7rem;width:.7rem}
+.faqe-card .faqe-card-desc{-webkit-box-orient:vertical;color:var(--mute-color,var(--fg-color));display:-webkit-box;font-size:1.2rem;-webkit-line-clamp:2;line-clamp:2;line-height:1.45;margin:0;overflow:hidden;text-align:left!important}
 "#;
 
 /// Motion rules are generated from the reviewed legacy keyframe tables. Keeping
