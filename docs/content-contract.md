@@ -94,7 +94,7 @@ complete schema is:
 | `avatar_hover` | string | Content-root-relative hover avatar asset. |
 | `favicon` | string | Content-root-relative favicon asset. |
 | `default_card_thumbnail` | string | Content-root-relative fallback required when a post or presentation card has no page thumbnail. |
-| `default_foot` | string | Footer text inherited by pages. |
+| `default_foot` | string | Footer text inherited by pages. Pages without footer text render no footer. |
 | `disclaimer_title` | string | Optional title for the post disclosure shown when a post has a punchline. |
 | `disclaimer_paragraphs` | array of strings | Content-owned disclosure paragraphs; empty suppresses the disclosure. |
 | `references_copyright` | string | Optional first line below post reference links. |

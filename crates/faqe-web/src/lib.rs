@@ -794,13 +794,15 @@ fn standard_shell(props: &ShellProps) -> Html {
             </nav>
             <main id="main" tabindex="-1" class="content">{props.children.clone()}</main>
             <div class="faqe-route-status" role="status" aria-live="polite" aria-atomic="true">{gloo_utils::document().title()}</div>
-            <footer class="footer">
-                <section class="container">{
-                    quotes_route
-                        .map(|route| html! { <a href={site_url(&route)}><p>{foot}</p></a> })
-                        .unwrap_or_else(|| html! { <p>{foot}</p> })
-                }</section>
-            </footer>
+            {if foot.trim().is_empty() { Html::default() } else { html! {
+                <footer class="footer">
+                    <section class="container">{
+                        quotes_route
+                            .map(|route| html! { <a href={site_url(&route)}><p>{foot}</p></a> })
+                            .unwrap_or_else(|| html! { <p>{foot}</p> })
+                    }</section>
+                </footer>
+            } }}
         </div>
     }
 }
@@ -873,13 +875,15 @@ fn home_page(props: &BundleProps) -> Html {
                     </div>
                 </div>
                 <div class="home-end">
-                    <div class="socials">
-                        {for props.bundle.site.socials.iter().map(|social| html! {
-                            <li><a class="textglitch" data-text={social.glyph.clone()} href={social.url.clone()} aria-label={social.name.clone()}>
-                                {social_icon_view(&social.name, &social.glyph)}
-                            </a></li>
-                        })}
-                    </div>
+                    {if props.bundle.site.socials.is_empty() { Html::default() } else { html! {
+                        <div class="socials">
+                            {for props.bundle.site.socials.iter().map(|social| html! {
+                                <li><a class="textglitch" data-text={social.glyph.clone()} href={social.url.clone()} aria-label={social.name.clone()}>
+                                    {social_icon_view(&social.name, &social.glyph)}
+                                </a></li>
+                            })}
+                        </div>
+                    } }}
                     {if let Some(latest) = props.bundle.latest_post() {
                         html! { <div class="latest"><a href={site_url(&latest.route)}><div class="latestchild"><div class="latesttag"><ScrambleTitle text={format!("LATEST POST: {}", latest.title)} profile={GlitchProfile::PostTitle} /></div></div></a></div> }
                     } else { Html::default() }}
@@ -1852,13 +1856,16 @@ fn direct_child_route(parent: &str, candidate: &str) -> bool {
         .is_some_and(|remainder| !remainder.trim_matches('/').contains('/'))
 }
 
-fn resume_list_section(section: &faqe_model::ResumeProjects, class: &str) -> Html {
+fn resume_list_section(section: &faqe_model::ResumeProjects, cards: bool) -> Html {
     if !section.enable {
         return Html::default();
     }
     html! {
-        <section class={classes!("section", "projects-section", class.to_owned())}><ResumeHeading icon={section.icon.clone()} title={section.title.clone()} /><div class="intro">{document_view(&section.intro_document)}</div>
-            {for section.list.iter().map(|item| html! { <><div class="item"><span class="project-title"><a href={safe_href(&item.url)}><ScrambleTitle text={item.title.clone()} profile={GlitchProfile::Subtitle} /></a></span>{" - "}<span class="project-tagline">{inline_document_view(&item.tagline_document)}</span></div><hr /></> })}
+        <section class="cv-section"><ResumeHeading icon={section.icon.clone()} title={section.title.clone()} />
+            <div class="cv-text cv-intro">{document_view(&section.intro_document)}</div>
+            <ul class={if cards { "cv-cards" } else { "cv-entries" }}>{for section.list.iter().map(|item| html! {
+                <li><a href={safe_href(&item.url)}>{&item.title}</a><span>{inline_document_view(&item.tagline_document)}</span></li>
+            })}</ul>
         </section>
     }
 }
@@ -1876,16 +1883,22 @@ fn content_card(page: &Page, default_thumbnail: &str) -> Html {
         "--accent-color:{};--chromatic-a:{};--chromatic-b:{};--card-text-color:{}",
         style.accent, style.chromatic[0], style.chromatic[1], palette.accent_text
     );
+    let placeholder = page.thumbnail.as_deref().is_none_or(str::is_empty);
+    let description = page
+        .description
+        .as_deref()
+        .filter(|description| !description.trim().is_empty());
     html! {
-        <a class="p-2" href={site_url(&page.route)}><div class="relative" style={card_style}>
-            <div class="card_image" aria-hidden="true"><img class="card_image" src={site_url(thumbnail)} alt="" /></div>
-            <div class="card_date">{format_legacy_date(page.date.as_deref())}</div>
-            <div class="card_time">{icon_view("clock")}{" "}{format!("{}'", page.reading_minutes)}</div>
-            <div><hr class="card-rule" /></div>
-            <div class="card_box"><div class="card_title">
-                <ScrambleTitle text={page.title.clone()} profile={GlitchProfile::PostTitle} />
-            </div></div>
-        </div></a>
+        <a class="faqe-card" href={site_url(&page.route)} style={card_style}>
+            <div class={classes!("faqe-card-media", placeholder.then_some("is-placeholder"))} aria-hidden="true">
+                <img src={site_url(thumbnail)} alt="" loading="lazy" />
+            </div>
+            <div class="faqe-card-body">
+                <h3 class="faqe-card-title"><ScrambleTitle text={page.title.clone()} profile={GlitchProfile::PostTitle} /></h3>
+                <p class="faqe-card-meta">{format_legacy_date(page.date.as_deref())}{" · "}{format!("{} min", page.reading_minutes)}</p>
+                {description.map_or_else(Html::default, |text| html! { <p class="faqe-card-desc">{text}</p> })}
+            </div>
+        </a>
     }
 }
 
@@ -2032,61 +2045,64 @@ fn resume_page(props: &PageProps) -> Html {
 
 fn resume_view(resume: &ResumeData, site: &SiteMetadata) -> Html {
     html! {
-        <div class="wrapper resume">
-        <div class="cv estate">
-            <aside class="sidebar-wrapper">
-                <div class="profile-container">
-                    {if resume.profile.is_empty() { Html::default() } else { html! { <img class="profile img-circle" src={site_url(&resume.profile)} alt={site.author.clone()} /> } }}
-                    <h1 class="name"><ScrambleTitle text={site.author.clone()} /></h1>
-                    <h3 class="tagline"><ScrambleTitle text={site.info.clone()} profile={GlitchProfile::Subtitle} /></h3>
+        <div class="wrapper resume"><div class="cv">
+            <header class="cv-head">
+                {if resume.profile.is_empty() { Html::default() } else { html! { <img class="cv-photo" src={site_url(&resume.profile)} alt={site.author.clone()} /> } }}
+                <div class="cv-id">
+                    <h1 class="cv-name"><ScrambleTitle text={site.author.clone()} /></h1>
+                    <p class="cv-tagline">{&site.info}</p>
+                    {if resume.contact.enable { html! {
+                        <ul class="cv-contacts">{for resume.contact.list.iter().map(|item| html! {
+                            <li class={item.class.clone()}><a href={safe_href(&item.url)}>{icon_view(&item.icon)}<span>{&item.title}</span></a></li>
+                        })}</ul>
+                    }} else { Html::default() }}
                 </div>
-                {if resume.contact.enable { html! {
-                    <div class="contact-container container-block"><ul class="list-unstyled contact-list">
-                        {for resume.contact.list.iter().map(|item| html! {
-                            <li class={item.class.clone()}>{icon_view(&item.icon)}<a href={safe_href(&item.url)}>{&item.title}</a></li>
-                        })}
-                    </ul></div>
-                }} else { Html::default() }}
-                {if resume.education.enable { html! {
-                    <div class="education-container container-block">
-                        <h2 class="container-block-title">{icon_view("archive")}<ScrambleTitle text={resume.education.title.to_uppercase()} profile={GlitchProfile::Subtitle} /></h2>
-                        {for resume.education.list.iter().map(|item| html! { <>
-                            <div class="item"><h4 class="degree"><ScrambleTitle text={item.degree.clone()} profile={GlitchProfile::Subtitle} /></h4><h5 class="meta"><ScrambleTitle text={item.college.clone()} profile={GlitchProfile::Subtitle} /></h5><div class="time">{&item.dates}</div></div><hr />
-                        </> })}
-                    </div>
-                }} else { Html::default() }}
-                {if resume.language.enable { html! {
-                    <div class="language-container container-block">
-                        <h2 class="container-block-title">{icon_view("globe")}<ScrambleTitle text={resume.language.title.to_uppercase()} profile={GlitchProfile::Subtitle} /></h2>
-                        <ul class="list-unstyled interests-list">{for resume.language.list.iter().map(|item| html! { <li>{&item.language}{if item.level.trim().is_empty() { Html::default() } else { html! { <>{" "}<span class="lang-desc">{format!("({})", item.level)}</span></> } }}</li> })}</ul>
-                    </div>
-                }} else { Html::default() }}
-                {if resume.interests.enable { html! {
-                    <div class="interests-container container-block">
-                        <h2 class="container-block-title">{icon_view("rocket")}<ScrambleTitle text={resume.interests.title.to_uppercase()} profile={GlitchProfile::Subtitle} /></h2>
-                        <ul class="list-unstyled interests-list">{for resume.interests.list.iter().map(|item| html! { <li>{&item.interest}</li> })}</ul>
-                    </div>
-                }} else { Html::default() }}
-            </aside>
-            <div class="main-wrapper">
-                {if resume.summary.enable { html! {
-                    <section class="section summary-section"><ResumeHeading icon={resume.summary.icon.clone()} title={resume.summary.title.clone()} /><div class="summary">{document_view(&resume.summary.summary_document)}</div></section>
-                }} else { Html::default() }}
-                {if resume.experiences.enable { html! {
-                    <section class="section experiences-section"><ResumeHeading icon={resume.experiences.icon.clone()} title={resume.experiences.title.clone()} />
-                        {for resume.jobs.list.iter().map(|job| html! { <div class="item"><div class="meta"><div class="upper-row"><h3 class="job-title"><ScrambleTitle text={job.position.clone()} profile={GlitchProfile::Subtitle} /></h3><div class="time">{&job.dates}</div></div><div class="company">{&job.company}</div></div><div class="details">{document_view(&job.details_document)}</div></div> })}
-                    </section>
-                }} else { Html::default() }}
-                {resume_list_section(&resume.publications, "publications-section")}
-                {resume_list_section(&resume.projects, "projects-section")}
-                {if resume.skills.enable { html! {
-                    <section class="skills-section section"><ResumeHeading icon={resume.skills.icon.clone()} title={resume.skills.title.clone()} /><div class="skillset">
-                        {for resume.skills.list.iter().map(|skill| html! { <div class="item"><h3 class="level-title"><ScrambleTitle text={skill.skill.clone()} profile={GlitchProfile::Subtitle} /></h3><div class="level-bar"><div class="level-bar-inner faqe-skill" style={format!("--skill-level:{}", safe_percentage(&skill.level))}></div></div></div> })}
-                    </div></section>
-                }} else { Html::default() }}
+            </header>
+            <div class="cv-body">
+                <div class="cv-main">
+                    {if resume.summary.enable { html! {
+                        <section class="cv-section"><ResumeHeading icon={resume.summary.icon.clone()} title={resume.summary.title.clone()} /><div class="cv-text">{document_view(&resume.summary.summary_document)}</div></section>
+                    }} else { Html::default() }}
+                    {if resume.experiences.enable { html! {
+                        <section class="cv-section"><ResumeHeading icon={resume.experiences.icon.clone()} title={resume.experiences.title.clone()} />
+                            <ol class="cv-timeline">{for resume.jobs.list.iter().map(|job| html! {
+                                <li><div class="cv-row"><h3>{&job.position}</h3><span class="cv-dates">{&job.dates}</span></div><p class="cv-org">{&job.company}</p><div class="cv-text">{document_view(&job.details_document)}</div></li>
+                            })}</ol>
+                        </section>
+                    }} else { Html::default() }}
+                    {resume_list_section(&resume.publications, false)}
+                    {resume_list_section(&resume.projects, true)}
+                    {if resume.skills.enable { html! {
+                        <section class="cv-section"><ResumeHeading icon={resume.skills.icon.clone()} title={resume.skills.title.clone()} />
+                            <ul class="cv-skills">{for resume.skills.list.iter().map(|skill| html! {
+                                <li><span>{&skill.skill}</span><span class="cv-bar" style={format!("--skill-level:{}", safe_percentage(&skill.level))}></span></li>
+                            })}</ul>
+                        </section>
+                    }} else { Html::default() }}
+                </div>
+                <aside class="cv-side">
+                    {if resume.education.enable { html! {
+                        <section class="cv-box"><ResumeHeading icon="archive" title={resume.education.title.clone()} />
+                            <ul class="cv-list">{for resume.education.list.iter().map(|item| html! {
+                                <li><strong>{&item.degree}</strong><span>{&item.college}</span>{if item.dates.trim().is_empty() { Html::default() } else { html! { <span class="cv-dates">{&item.dates}</span> } }}</li>
+                            })}</ul>
+                        </section>
+                    }} else { Html::default() }}
+                    {if resume.language.enable { html! {
+                        <section class="cv-box"><ResumeHeading icon="globe" title={resume.language.title.clone()} />
+                            <ul class="cv-list">{for resume.language.list.iter().map(|item| html! {
+                                <li class="cv-pair"><strong>{&item.language}</strong>{if item.level.trim().is_empty() { Html::default() } else { html! { <span>{&item.level}</span> } }}</li>
+                            })}</ul>
+                        </section>
+                    }} else { Html::default() }}
+                    {if resume.interests.enable { html! {
+                        <section class="cv-box"><ResumeHeading icon="rocket" title={resume.interests.title.clone()} />
+                            <ul class="cv-tags">{for resume.interests.list.iter().map(|item| html! { <li>{&item.interest}</li> })}</ul>
+                        </section>
+                    }} else { Html::default() }}
+                </aside>
             </div>
-        </div>
-        </div>
+        </div></div>
     }
 }
 
@@ -2098,7 +2114,7 @@ struct ResumeHeadingProps {
 
 #[function_component(ResumeHeading)]
 fn resume_heading(props: &ResumeHeadingProps) -> Html {
-    html! { <h2 class="section-title">{icon_view(&props.icon)}<ScrambleTitle text={props.title.clone()} profile={GlitchProfile::Subtitle} /></h2> }
+    html! { <h2 class="cv-title">{icon_view(&props.icon)}<ScrambleTitle text={props.title.clone()} profile={GlitchProfile::Subtitle} /></h2> }
 }
 
 fn safe_percentage(value: &str) -> String {
