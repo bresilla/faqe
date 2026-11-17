@@ -11,8 +11,8 @@ use ammonia::{Builder as HtmlSanitizer, UrlRelative};
 use chrono::NaiveDate;
 use faqe_model::{
     accessible_palette, canonical_route, chromatic_partner, contrast_ratio, slugify, Document,
-    DocumentNode, ElementKind, ElementNode, Page, PageKind, PageStyle, ResumeData, SiteBundle,
-    SiteMetadata, TalkDeck, TalkSlide, Theme, TocItem,
+    DocumentNode, ElementKind, ElementNode, Page, PageKind, PageStyle, ResumeData, ResumeProjects,
+    SiteBundle, SiteMetadata, TalkDeck, TalkSlide, Theme, TocItem,
 };
 use html5ever::tendril::StrTendril;
 use html5ever::tokenizer::{
@@ -1650,13 +1650,19 @@ fn parse_resume(table: &toml::value::Table, path: &Path) -> Result<ResumeData, C
         validate_active_html(path, &job.details)?;
         job.details_document = markdown_fragment(&job.details);
     }
-    validate_active_html(path, &resume.projects.intro)?;
-    resume.projects.intro_document = markdown_fragment(&resume.projects.intro);
-    for project in &mut resume.projects.list {
-        validate_active_html(path, &project.tagline)?;
-        project.tagline_document = markdown_fragment(&project.tagline);
-    }
+    render_resume_list(path, &mut resume.projects)?;
+    render_resume_list(path, &mut resume.publications)?;
     Ok(resume)
+}
+
+fn render_resume_list(path: &Path, section: &mut ResumeProjects) -> Result<(), ContentError> {
+    validate_active_html(path, &section.intro)?;
+    section.intro_document = markdown_fragment(&section.intro);
+    for item in &mut section.list {
+        validate_active_html(path, &item.tagline)?;
+        item.tagline_document = markdown_fragment(&item.tagline);
+    }
+    Ok(())
 }
 
 fn markdown_fragment(markdown: &str) -> Document {

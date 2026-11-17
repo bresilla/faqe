@@ -1852,6 +1852,17 @@ fn direct_child_route(parent: &str, candidate: &str) -> bool {
         .is_some_and(|remainder| !remainder.trim_matches('/').contains('/'))
 }
 
+fn resume_list_section(section: &faqe_model::ResumeProjects, class: &str) -> Html {
+    if !section.enable {
+        return Html::default();
+    }
+    html! {
+        <section class={classes!("section", "projects-section", class.to_owned())}><ResumeHeading icon={section.icon.clone()} title={section.title.clone()} /><div class="intro">{document_view(&section.intro_document)}</div>
+            {for section.list.iter().map(|item| html! { <><div class="item"><span class="project-title"><a href={safe_href(&item.url)}><ScrambleTitle text={item.title.clone()} profile={GlitchProfile::Subtitle} /></a></span>{" - "}<span class="project-tagline">{inline_document_view(&item.tagline_document)}</span></div><hr /></> })}
+        </section>
+    }
+}
+
 fn content_card(page: &Page, default_thumbnail: &str) -> Html {
     let style = visitor_style(&page.style).style;
     let palette = faqe_model::accessible_palette(&style)
@@ -2047,7 +2058,7 @@ fn resume_view(resume: &ResumeData, site: &SiteMetadata) -> Html {
                 {if resume.language.enable { html! {
                     <div class="language-container container-block">
                         <h2 class="container-block-title">{icon_view("globe")}<ScrambleTitle text={resume.language.title.to_uppercase()} profile={GlitchProfile::Subtitle} /></h2>
-                        <ul class="list-unstyled interests-list">{for resume.language.list.iter().map(|item| html! { <li>{&item.language}{" "}<span class="lang-desc">{format!("({})", item.level)}</span></li> })}</ul>
+                        <ul class="list-unstyled interests-list">{for resume.language.list.iter().map(|item| html! { <li>{&item.language}{if item.level.trim().is_empty() { Html::default() } else { html! { <>{" "}<span class="lang-desc">{format!("({})", item.level)}</span></> } }}</li> })}</ul>
                     </div>
                 }} else { Html::default() }}
                 {if resume.interests.enable { html! {
@@ -2066,11 +2077,8 @@ fn resume_view(resume: &ResumeData, site: &SiteMetadata) -> Html {
                         {for resume.jobs.list.iter().map(|job| html! { <div class="item"><div class="meta"><div class="upper-row"><h3 class="job-title"><ScrambleTitle text={job.position.clone()} profile={GlitchProfile::Subtitle} /></h3><div class="time">{&job.dates}</div></div><div class="company">{&job.company}</div></div><div class="details">{document_view(&job.details_document)}</div></div> })}
                     </section>
                 }} else { Html::default() }}
-                {if resume.projects.enable { html! {
-                    <section class="section projects-section"><ResumeHeading icon={resume.projects.icon.clone()} title={resume.projects.title.clone()} /><div class="intro">{document_view(&resume.projects.intro_document)}</div>
-                        {for resume.projects.list.iter().map(|project| html! { <><div class="item"><span class="project-title"><a href={safe_href(&project.url)}><ScrambleTitle text={project.title.clone()} profile={GlitchProfile::Subtitle} /></a></span>{" - "}<span class="project-tagline">{inline_document_view(&project.tagline_document)}</span></div><hr /></> })}
-                    </section>
-                }} else { Html::default() }}
+                {resume_list_section(&resume.publications, "publications-section")}
+                {resume_list_section(&resume.projects, "projects-section")}
                 {if resume.skills.enable { html! {
                     <section class="skills-section section"><ResumeHeading icon={resume.skills.icon.clone()} title={resume.skills.title.clone()} /><div class="skillset">
                         {for resume.skills.list.iter().map(|skill| html! { <div class="item"><h3 class="level-title"><ScrambleTitle text={skill.skill.clone()} profile={GlitchProfile::Subtitle} /></h3><div class="level-bar"><div class="level-bar-inner faqe-skill" style={format!("--skill-level:{}", safe_percentage(&skill.level))}></div></div></div> })}

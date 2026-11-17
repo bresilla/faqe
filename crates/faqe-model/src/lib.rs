@@ -566,6 +566,8 @@ pub struct ResumeData {
     #[serde(default)]
     pub projects: ResumeProjects,
     #[serde(default)]
+    pub publications: ResumeProjects,
+    #[serde(default)]
     pub skills: ResumeSkills,
 }
 
